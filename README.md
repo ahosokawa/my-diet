@@ -101,3 +101,7 @@ v1.1 (next) adds iOS Web Push notifications (meal reminders, weigh-in, Friday re
 - Multi-device sync / accounts
 - Household units (cups, tbsp, oz)
 - Dark mode
+
+## Credits
+
+Built by Andrew Hosokawa with help from Claude.

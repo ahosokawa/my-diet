@@ -35,7 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <div className="mx-auto max-w-md">{children}</div>
+        <div className="absolute inset-0 mx-auto flex max-w-md flex-col">{children}</div>
         <script
           dangerouslySetInnerHTML={{
             __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/sw.js').catch(() => {}); }); }`,

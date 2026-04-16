@@ -85,25 +85,27 @@ export default function FoodsPage() {
   }
 
   return (
-    <main className="min-h-dvh p-4">
-      <Header title="Foods" />
+    <>
+      <main className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex-shrink-0 bg-neutral-50 px-4 pt-4">
+          <Header title="Foods" />
+          <input
+            className="input mb-3"
+            placeholder="Search…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <button
+            className="btn-secondary mb-3 w-full"
+            onClick={() => setShowForm(!showForm)}
+          >
+            {showForm ? "Cancel" : "+ Add custom food"}
+          </button>
+        </div>
 
-      <input
-        className="input mb-4"
-        placeholder="Search…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-
-      <button
-        className="btn-secondary mb-4 w-full"
-        onClick={() => setShowForm(!showForm)}
-      >
-        {showForm ? "Cancel" : "+ Add custom food"}
-      </button>
-
-      {showForm && (
-        <div className="card mb-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
+          {showForm && (
+            <div className="card mb-4 space-y-3">
           <div>
             <label className="label">Name</label>
             <input
@@ -244,8 +246,9 @@ export default function FoodsPage() {
           </p>
         )}
       </div>
-
+        </div>
+      </main>
       <TabBar />
-    </main>
+    </>
   );
 }

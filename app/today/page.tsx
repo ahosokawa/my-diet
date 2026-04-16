@@ -134,16 +134,20 @@ function TodayView() {
 
   if (!targets) {
     return (
-      <main className="p-4">
-        <Header title="Today" />
-        <p className="mt-12 text-center text-neutral-500">Loading…</p>
-      </main>
+      <>
+        <main className="flex-1 overflow-y-auto p-4">
+          <Header title="Today" />
+          <p className="mt-12 text-center text-neutral-500">Loading…</p>
+        </main>
+        <TabBar />
+      </>
     );
   }
 
   return (
-    <main className="min-h-dvh p-4">
-      <Header title={formatDate(date)} />
+    <>
+      <main className="flex-1 overflow-y-auto p-4">
+        <Header title={formatDate(date)} />
 
       <div className="mb-4 flex items-center justify-between">
         <button
@@ -229,14 +233,24 @@ function TodayView() {
         })}
       </div>
 
+      </main>
       <TabBar />
-    </main>
+    </>
   );
 }
 
 export default function TodayPage() {
   return (
-    <Suspense fallback={<main className="p-4"><Header title="Today" /></main>}>
+    <Suspense
+      fallback={
+        <>
+          <main className="flex-1 overflow-y-auto p-4">
+            <Header title="Today" />
+          </main>
+          <TabBar />
+        </>
+      }
+    >
       <TodayView />
     </Suspense>
   );

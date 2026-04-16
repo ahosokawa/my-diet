@@ -200,7 +200,7 @@ function MealDetail() {
 
   if (!target) {
     return (
-      <main className="p-4">
+      <main className="flex-1 overflow-y-auto p-4">
         <Header title="Meal" back="/today" />
         <p className="mt-12 text-center text-neutral-500">Loading…</p>
       </main>
@@ -208,7 +208,7 @@ function MealDetail() {
   }
 
   return (
-    <main className="min-h-dvh p-4">
+    <main className="flex-1 overflow-y-auto p-4">
       <Header title={`Meal ${mealIndex + 1}`} back="/today" />
 
       <div className="card mb-4">
@@ -422,7 +422,7 @@ function MealDetail() {
 
 export default function MealPage() {
   return (
-    <Suspense fallback={<main className="p-4"><Header title="Meal" back="/today" /></main>}>
+    <Suspense fallback={<main className="flex-1 overflow-y-auto p-4"><Header title="Meal" back="/today" /></main>}>
       <MealDetail />
     </Suspense>
   );

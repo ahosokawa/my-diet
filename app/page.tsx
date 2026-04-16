@@ -17,7 +17,7 @@ export default function IndexPage() {
   }, [router]);
 
   return (
-    <main className="p-6">
+    <main className="flex-1 overflow-y-auto p-6">
       <div className="mt-20 text-center text-neutral-500">
         {ready ? "Loading…" : "Starting…"}
       </div>

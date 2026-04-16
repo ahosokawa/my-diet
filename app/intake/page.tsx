@@ -174,7 +174,7 @@ export default function IntakePage() {
   }
 
   return (
-    <main className="min-h-dvh p-4">
+    <main className="flex-1 overflow-y-auto p-4">
       <Header title="Welcome" />
       <div className="mt-4 mb-6 flex gap-1">
         {Array.from({ length: TOTAL_STEPS }, (_, i) => (

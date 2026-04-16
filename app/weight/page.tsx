@@ -9,7 +9,7 @@ import { WeightChart } from "./WeightChart";
 
 export default function WeightPage() {
   const [entries, setEntries] = useState<WeightEntry[]>([]);
-  const [value, setValue] = useState<number | "">("");
+  const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function load() {
@@ -21,9 +21,10 @@ export default function WeightPage() {
   }, []);
 
   async function handleAdd() {
-    if (value === "" || value <= 0) return;
+    const lbs = Number(value);
+    if (!value || !isFinite(lbs) || lbs <= 0) return;
     setSaving(true);
-    await addWeight({ date: todayStr(), lbs: Number(value) });
+    await addWeight({ date: todayStr(), lbs });
     setValue("");
     setSaving(false);
     await load();
@@ -32,8 +33,9 @@ export default function WeightPage() {
   const todaysEntry = entries.find((e) => e.date === todayStr());
 
   return (
-    <main className="min-h-dvh p-4">
-      <Header title="Weight" />
+    <>
+      <main className="flex-1 overflow-y-auto p-4">
+        <Header title="Weight" />
 
       <div className="card mb-4">
         <h3 className="mb-2 font-semibold">
@@ -47,16 +49,18 @@ export default function WeightPage() {
           <div className="flex gap-3">
             <input
               inputMode="decimal"
+              pattern="[0-9]*\.?[0-9]*"
               className="input flex-1"
-              placeholder="e.g. 185"
+              placeholder="e.g. 185.0"
               value={value}
-              onChange={(e) =>
-                setValue(e.target.value === "" ? "" : Number(e.target.value))
-              }
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "" || /^\d*\.?\d*$/.test(v)) setValue(v);
+              }}
             />
             <button
               className="btn-primary"
-              disabled={saving || value === ""}
+              disabled={saving || value === "" || value === "."}
               onClick={handleAdd}
             >
               Save
@@ -89,7 +93,8 @@ export default function WeightPage() {
         )}
       </div>
 
+      </main>
       <TabBar />
-    </main>
+    </>
   );
 }

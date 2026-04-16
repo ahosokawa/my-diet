@@ -136,57 +136,65 @@ export default function ReviewPage() {
 
   if (!loaded) {
     return (
-      <main className="min-h-dvh p-4">
-        <Header title="Weekly check-in" />
-        <p className="mt-12 text-center text-neutral-500">Loading…</p>
+      <>
+        <main className="flex-1 overflow-y-auto p-4">
+          <Header title="Weekly check-in" />
+          <p className="mt-12 text-center text-neutral-500">Loading…</p>
+        </main>
         <TabBar />
-      </main>
+      </>
     );
   }
 
   if (!targets) {
     return (
-      <main className="min-h-dvh p-4">
-        <Header title="Weekly check-in" />
-        <p className="mt-12 text-center text-neutral-500">
-          Finish onboarding first.
-        </p>
+      <>
+        <main className="flex-1 overflow-y-auto p-4">
+          <Header title="Weekly check-in" />
+          <p className="mt-12 text-center text-neutral-500">
+            Finish onboarding first.
+          </p>
+        </main>
         <TabBar />
-      </main>
+      </>
     );
   }
 
   if (daysUntilEligible > 0) {
     return (
-      <main className="min-h-dvh p-4">
-        <Header title="Weekly check-in" />
-        <div className="card mt-4">
-          <h2 className="mb-2 font-semibold">Come back in {daysUntilEligible} day{daysUntilEligible !== 1 ? "s" : ""}</h2>
-          <p className="text-sm text-neutral-600">
-            Check-ins start after your first full week. Keep logging daily
-            weights and we'll have something to compare.
-          </p>
-        </div>
+      <>
+        <main className="flex-1 overflow-y-auto p-4">
+          <Header title="Weekly check-in" />
+          <div className="card mt-4">
+            <h2 className="mb-2 font-semibold">Come back in {daysUntilEligible} day{daysUntilEligible !== 1 ? "s" : ""}</h2>
+            <p className="text-sm text-neutral-600">
+              Check-ins start after your first full week. Keep logging daily
+              weights and we'll have something to compare.
+            </p>
+          </div>
+        </main>
         <TabBar />
-      </main>
+      </>
     );
   }
 
   if (!suggestion) {
     const needed = current.length === 0 ? "this week" : "the prior week";
     return (
-      <main className="min-h-dvh p-4">
-        <Header title="Weekly check-in" />
-        <div className="card mt-4">
-          <h2 className="mb-2 font-semibold">Not enough data yet</h2>
-          <p className="text-sm text-neutral-600">
-            Log at least one weight in {needed} to see a suggestion. Keep a
-            daily weigh-in going and we'll have something to compare next
-            Friday.
-          </p>
-        </div>
+      <>
+        <main className="flex-1 overflow-y-auto p-4">
+          <Header title="Weekly check-in" />
+          <div className="card mt-4">
+            <h2 className="mb-2 font-semibold">Not enough data yet</h2>
+            <p className="text-sm text-neutral-600">
+              Log at least one weight in {needed} to see a suggestion. Keep a
+              daily weigh-in going and we'll have something to compare next
+              Friday.
+            </p>
+          </div>
+        </main>
         <TabBar />
-      </main>
+      </>
     );
   }
 
@@ -205,8 +213,9 @@ export default function ReviewPage() {
   const deltaPctDisplay = (suggestion.deltaPct * 100).toFixed(2);
 
   return (
-    <main className="min-h-dvh p-4">
-      <Header title="Weekly check-in" />
+    <>
+      <main className="flex-1 overflow-y-auto p-4">
+        <Header title="Weekly check-in" />
 
       <div className="card mb-4">
         <h2 className="mb-3 font-semibold">Weight trend</h2>
@@ -349,7 +358,8 @@ export default function ReviewPage() {
         </div>
       )}
 
+      </main>
       <TabBar />
-    </main>
+    </>
   );
 }

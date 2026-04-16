@@ -78,8 +78,9 @@ export default function SchedulePage() {
   if (days.length === 0) return null;
 
   return (
-    <main className="min-h-dvh p-4">
-      <Header title="Schedule" />
+    <>
+      <main className="flex-1 overflow-y-auto p-4">
+        <Header title="Schedule" />
 
       {copyFrom !== null && (
         <div className="card mb-4">
@@ -264,8 +265,9 @@ export default function SchedulePage() {
         </button>
       </div>
 
+      </main>
       <TabBar />
-    </main>
+    </>
   );
 }
 
