@@ -1,15 +1,16 @@
 /** @type {import('next').NextConfig} */
+const isProd = process.env.NODE_ENV === "production";
+const basePath = isProd ? "/my-diet" : "";
+
 const nextConfig = {
   reactStrictMode: true,
-  headers: async () => [
-    {
-      source: "/sw.js",
-      headers: [
-        { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
-        { key: "Service-Worker-Allowed", value: "/" },
-      ],
-    },
-  ],
+  output: "export",
+  trailingSlash: true,
+  images: { unoptimized: true },
+  basePath,
+  env: {
+    NEXT_PUBLIC_BASE_PATH: basePath,
+  },
 };
 
 export default nextConfig;

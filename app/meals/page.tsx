@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, useMemo, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
 import { MacroRow } from "@/components/MacroBar";
 import { GramsStepper } from "@/components/GramsStepper";
@@ -24,12 +24,11 @@ import { solvePortions, macrosFor, type FoodMacros } from "@/lib/nutrition/solve
 
 type Selection = { food: Food; grams: number; locked: boolean };
 
-export default function MealDetailPage() {
-  const params = useParams();
+function MealDetail() {
   const router = useRouter();
-  const id = params.id as string;
-  const [date, indexStr] = id.split(/-(?=\d+$)/);
-  const mealIndex = Number(indexStr);
+  const params = useSearchParams();
+  const date = params.get("d") ?? todayStr();
+  const mealIndex = Number(params.get("i") ?? "0");
 
   const [allFoods, setAllFoods] = useState<Food[]>([]);
   const [combos, setCombos] = useState<Combo[]>([]);
@@ -418,5 +417,13 @@ export default function MealDetailPage() {
         </button>
       )}
     </main>
+  );
+}
+
+export default function MealPage() {
+  return (
+    <Suspense fallback={<main className="p-4"><Header title="Meal" back="/today" /></main>}>
+      <MealDetail />
+    </Suspense>
   );
 }

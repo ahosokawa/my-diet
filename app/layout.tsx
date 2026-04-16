@@ -1,13 +1,15 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export const metadata: Metadata = {
   title: "my-diet",
   description: "Simple macro tracking and meal planning",
-  manifest: "/manifest.webmanifest",
+  manifest: `${BASE}/manifest.webmanifest`,
   icons: {
-    icon: [{ url: "/favicon.ico", sizes: "any" }],
-    apple: [{ url: "/apple-touch-icon.png" }],
+    icon: [{ url: `${BASE}/favicon.ico`, sizes: "any" }],
+    apple: [{ url: `${BASE}/apple-touch-icon.png` }],
   },
   appleWebApp: {
     capable: true,
@@ -36,7 +38,7 @@ export default function RootLayout({
         <div className="mx-auto max-w-md">{children}</div>
         <script
           dangerouslySetInnerHTML={{
-            __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); }); }`,
+            __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/sw.js').catch(() => {}); }); }`,
           }}
         />
       </body>

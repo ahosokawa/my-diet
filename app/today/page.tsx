@@ -201,7 +201,7 @@ function TodayView() {
           return (
             <Link
               key={m.index}
-              href={`/meals/${date}-${m.index}`}
+              href={`/meals?d=${date}&i=${m.index}`}
               className={`card block ${logged ? "opacity-70" : ""}`}
             >
               <div className="flex items-center justify-between">

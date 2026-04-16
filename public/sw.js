@@ -1,5 +1,6 @@
 const CACHE = "my-diet-v1";
-const PRECACHE = ["/", "/manifest.webmanifest"];
+const SCOPE = self.registration ? self.registration.scope : "./";
+const PRECACHE = [SCOPE, SCOPE + "manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).catch(() => {}));
@@ -32,7 +33,7 @@ self.addEventListener("fetch", (event) => {
         const cached = await caches.match(request);
         if (cached) return cached;
         if (request.mode === "navigate") {
-          const shell = await caches.match("/");
+          const shell = await caches.match(self.registration.scope);
           if (shell) return shell;
         }
         return new Response("Offline", { status: 503 });
@@ -51,11 +52,12 @@ self.addEventListener("push", (event) => {
   })();
   const title = data.title || "my-diet";
   const body = data.body || "";
+  const scope = self.registration.scope;
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      icon: scope + "icons/icon-192.png",
+      badge: scope + "icons/icon-192.png",
     })
   );
 });
