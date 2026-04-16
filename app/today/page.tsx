@@ -10,6 +10,8 @@ import {
   getCurrentTargets,
   getSchedule,
   getMealLogsForDate,
+  hasPendingTargetChange,
+  isReviewEligible,
   todayStr,
 } from "@/lib/db/repos";
 import type { Targets, ScheduleDay, MealLog } from "@/lib/db/schema";
@@ -61,6 +63,7 @@ function TodayView() {
 
   const [targets, setTargets] = useState<Targets | null>(null);
   const [meals, setMeals] = useState<MealCard[]>([]);
+  const [reviewPending, setReviewPending] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -94,6 +97,16 @@ function TodayView() {
         logged: logs.find((l) => l.index === i),
       }));
       setMeals(cards);
+    })();
+  }, [date]);
+
+  useEffect(() => {
+    (async () => {
+      const [eligible, pending] = await Promise.all([
+        isReviewEligible(),
+        hasPendingTargetChange(),
+      ]);
+      setReviewPending(eligible && !pending);
     })();
   }, [date]);
 
@@ -158,6 +171,24 @@ function TodayView() {
           ›
         </button>
       </div>
+
+      {isToday && reviewPending && (
+        <Link
+          href="/review"
+          className="card mb-4 block bg-brand-50 active:bg-brand-100"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wide text-brand-700">
+                Weekly check-in
+              </div>
+              <div className="text-sm text-neutral-700">
+                Review this week's trend →
+              </div>
+            </div>
+          </div>
+        </Link>
+      )}
 
       <div className="card mb-4">
         <h2 className="mb-3 font-semibold">Daily totals</h2>

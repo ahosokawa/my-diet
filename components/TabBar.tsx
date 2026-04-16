@@ -8,6 +8,7 @@ const TABS = [
   { href: "/foods", label: "Foods" },
   { href: "/schedule", label: "Schedule" },
   { href: "/weight", label: "Weight" },
+  { href: "/review", label: "Review" },
 ];
 
 export function TabBar() {

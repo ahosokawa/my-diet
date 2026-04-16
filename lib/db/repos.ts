@@ -24,6 +24,19 @@ export async function saveTargets(t: Omit<Targets, "id">): Promise<void> {
   await db.targets.add(t);
 }
 
+export async function hasPendingTargetChange(): Promise<boolean> {
+  const today = todayStr();
+  const future = await db.targets.where("dateEffective").above(today).count();
+  return future > 0;
+}
+
+export async function isReviewEligible(): Promise<boolean> {
+  const p = await getProfile();
+  if (!p) return false;
+  const ageMs = Date.now() - p.createdAt;
+  return ageMs >= 7 * 24 * 60 * 60 * 1000;
+}
+
 export async function listFoods(): Promise<Food[]> {
   const all = await db.foods.orderBy("name").toArray();
   return all.sort((a, b) => {
