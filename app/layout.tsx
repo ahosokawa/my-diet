@@ -5,6 +5,10 @@ export const metadata: Metadata = {
   title: "my-diet",
   description: "Simple macro tracking and meal planning",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [{ url: "/favicon.ico", sizes: "any" }],
+    apple: [{ url: "/apple-touch-icon.png" }],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
