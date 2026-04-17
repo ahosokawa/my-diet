@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { NotificationBootstrap } from "@/components/NotificationBootstrap";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -36,6 +37,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <div className="absolute inset-0 mx-auto flex max-w-md flex-col">{children}</div>
+        <NotificationBootstrap />
         <script
           dangerouslySetInnerHTML={{
             __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/sw.js').catch(() => {}); }); }`,

@@ -71,6 +71,16 @@ export type WeightEntry = {
   lbs: number;
 };
 
+export type NotifPrefs = {
+  id: "me";
+  enabled: 0 | 1;
+  mealLeadMin: number;
+  weighInEnabled: 0 | 1;
+  weighInTime: string;
+  reviewEnabled: 0 | 1;
+  reviewTime: string;
+};
+
 class MyDietDb extends Dexie {
   profile!: Table<Profile, "me">;
   targets!: Table<Targets, number>;
@@ -79,6 +89,7 @@ class MyDietDb extends Dexie {
   mealLogs!: Table<MealLog, number>;
   weights!: Table<WeightEntry, number>;
   combos!: Table<Combo, number>;
+  prefs!: Table<NotifPrefs, "me">;
 
   constructor() {
     super("my-diet");
@@ -105,6 +116,9 @@ class MyDietDb extends Dexie {
       for (const slug of oilSlugs) {
         await tx.table("foods").where("slug").equals(slug).modify({ unit: "g" });
       }
+    });
+    this.version(4).stores({
+      prefs: "id",
     });
   }
 }

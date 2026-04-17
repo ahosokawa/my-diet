@@ -1,5 +1,15 @@
-import { db, type Combo, type Food, type MealLog, type Profile, type ScheduleDay, type Targets, type WeightEntry } from "./schema";
+import { db, type Combo, type Food, type MealLog, type NotifPrefs, type Profile, type ScheduleDay, type Targets, type WeightEntry } from "./schema";
 import seedFoods from "./seed-foods.json";
+
+export const DEFAULT_NOTIF_PREFS: NotifPrefs = {
+  id: "me",
+  enabled: 0,
+  mealLeadMin: 20,
+  weighInEnabled: 1,
+  weighInTime: "07:00",
+  reviewEnabled: 1,
+  reviewTime: "08:00",
+};
 
 export async function getProfile(): Promise<Profile | undefined> {
   return db.profile.get("me");
@@ -129,6 +139,15 @@ export async function addWeight(w: Omit<WeightEntry, "id">): Promise<void> {
 export async function listWeights(limit = 60): Promise<WeightEntry[]> {
   const all = await db.weights.orderBy("date").reverse().limit(limit).toArray();
   return all.reverse();
+}
+
+export async function getNotifPrefs(): Promise<NotifPrefs> {
+  const row = await db.prefs.get("me");
+  return row ?? DEFAULT_NOTIF_PREFS;
+}
+
+export async function saveNotifPrefs(p: Omit<NotifPrefs, "id">): Promise<void> {
+  await db.prefs.put({ id: "me", ...p });
 }
 
 export function todayStr(): string {

@@ -147,7 +147,18 @@ function TodayView() {
   return (
     <>
       <main className="flex-1 overflow-y-auto p-4">
-        <Header title={formatDate(date)} />
+        <Header
+          title={formatDate(date)}
+          right={
+            <Link
+              href="/settings"
+              aria-label="Settings"
+              className="text-xl text-neutral-500 active:text-neutral-700"
+            >
+              ⚙
+            </Link>
+          }
+        />
 
       <div className="mb-4 flex items-center justify-between">
         <button

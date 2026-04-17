@@ -42,6 +42,27 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const scope = self.registration.scope;
+  const data = event.notification.data || {};
+  let path = "today/";
+  if (data.kind === "weighIn") path = "weight/";
+  else if (data.kind === "review") path = "review/";
+  const url = new URL(path, scope).toString();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) {
+          client.navigate(url).catch(() => {});
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    })
+  );
+});
+
 self.addEventListener("push", (event) => {
   const data = (() => {
     try {
