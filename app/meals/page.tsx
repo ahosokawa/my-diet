@@ -5,6 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
 import { MacroRow } from "@/components/MacroBar";
 import { GramsStepper } from "@/components/GramsStepper";
+import { Sheet } from "@/components/ui/Sheet";
+import { IconButton } from "@/components/ui/IconButton";
+import { Lock, LockOpen, X, Plus, Sparkles, Star, Search, Trash2, Copy } from "@/components/ui/Icon";
+import { haptic } from "@/lib/ui/haptics";
 import {
   getCurrentTargets,
   getSchedule,
@@ -78,13 +82,14 @@ function MealDetail() {
   const filteredFoods = useMemo(() => {
     const q = search.toLowerCase();
     const base = q ? allFoods.filter((f) => f.name.toLowerCase().includes(q)) : allFoods;
-    return base.slice(0, 40);
+    return base.slice(0, 60);
   }, [allFoods, search]);
 
   const addFood = useCallback(
     (food: Food) => {
       if (selected.some((s) => s.food.id === food.id)) return;
       setSelected((prev) => [...prev, { food, grams: 100, locked: false }]);
+      haptic("light");
       setShowPicker(false);
       setSearch("");
     },
@@ -93,6 +98,7 @@ function MealDetail() {
 
   const removeFood = useCallback((foodId: number) => {
     setSelected((prev) => prev.filter((s) => s.food.id !== foodId));
+    haptic("light");
   }, []);
 
   const setGrams = useCallback((foodId: number, grams: number) => {
@@ -105,6 +111,7 @@ function MealDetail() {
     setSelected((prev) =>
       prev.map((s) => (s.food.id === foodId ? { ...s, locked: !s.locked } : s))
     );
+    haptic("light");
   }, []);
 
   async function toggleFav(foodId: number) {
@@ -131,6 +138,7 @@ function MealDetail() {
 
   function autoBalance() {
     setSelected((prev) => balance(prev));
+    haptic("medium");
   }
 
   async function loadCombo(combo: Combo) {
@@ -145,6 +153,7 @@ function MealDetail() {
       .filter((s): s is Selection => s !== null);
     setSelected(balance(sel));
     setShowCombos(false);
+    haptic("light");
   }
 
   async function handleSaveCombo() {
@@ -159,6 +168,7 @@ function MealDetail() {
     );
     setComboName("");
     setShowSaveCombo(false);
+    haptic("success");
     await reload();
   }
 
@@ -195,234 +205,277 @@ function MealDetail() {
       fatG: actual.fatG,
       carbG: actual.carbG,
     });
+    haptic("success");
     router.push(date === todayStr() ? "/today" : `/today?d=${date}`);
   }
 
   if (!target) {
     return (
-      <main className="flex-1 overflow-y-auto p-4">
+      <main className="flex-1 overflow-y-auto">
         <Header title="Meal" back="/today" />
-        <p className="mt-12 text-center text-neutral-500">Loading…</p>
+        <p className="mt-12 text-center text-fg-3">Loading…</p>
       </main>
     );
   }
 
   return (
-    <main className="flex-1 overflow-y-auto p-4">
-      <Header title={`Meal ${mealIndex + 1}`} back="/today" />
+    <>
+      <main className="relative flex-1 overflow-y-auto">
+        <Header title={`Meal ${mealIndex + 1}`} back="/today" />
 
-      <div className="card mb-4">
-        <h3 className="mb-2 text-sm font-medium text-neutral-500">Target</h3>
-        <MacroRow target={target} current={actual} />
-      </div>
-
-      {selected.length > 0 && (
-        <div className="card mb-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Foods</h3>
-            <div className="flex gap-3">
-              <button
-                className="text-sm font-medium text-brand-600"
-                onClick={() => setShowSaveCombo(true)}
-              >
-                Save combo
-              </button>
-              <button
-                className="text-sm font-medium text-brand-600"
-                onClick={autoBalance}
-              >
-                Auto-balance
-              </button>
-            </div>
+        <div className="px-4 pb-40 pt-2">
+          <div className="card mb-4">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-3">Target</h3>
+            <MacroRow target={target} current={actual} />
           </div>
-          {selected.map((s) => (
-            <div key={s.food.id} className="space-y-2">
-              <div className="flex items-center gap-2">
-                <button
-                  aria-label={s.locked ? "Unlock" : "Lock"}
-                  onClick={() => toggleLock(s.food.id!)}
-                  className={`flex h-8 w-8 items-center justify-center rounded-md ${
-                    s.locked
-                      ? "bg-amber-100 text-amber-700"
-                      : "bg-neutral-100 text-neutral-400"
-                  }`}
-                  title={s.locked ? "Locked — auto-balance will not change" : "Unlocked"}
-                >
-                  {s.locked ? "🔒" : "🔓"}
-                </button>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{s.food.name}</div>
-                  <div className="truncate text-xs text-neutral-500">
-                    {s.food.kcalPer100} kcal · {s.food.proteinPer100}P ·{" "}
-                    {s.food.fatPer100}F · {s.food.carbPer100}C
+
+          {selected.length > 0 && (
+            <div className="card mb-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold">Foods</h3>
+                <div className="flex items-center gap-1">
+                  <button
+                    className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 active:bg-brand-100 dark:bg-brand-900/30 dark:text-brand-300"
+                    onClick={autoBalance}
+                  >
+                    <Sparkles className="h-4 w-4" /> Balance
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-fg-2 active:bg-surface-3"
+                    onClick={() => setShowSaveCombo(true)}
+                  >
+                    <Copy className="h-4 w-4" /> Save
+                  </button>
+                </div>
+              </div>
+              {selected.map((s) => (
+                <div key={s.food.id} className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <IconButton
+                      label={s.locked ? "Unlock" : "Lock"}
+                      tone={s.locked ? "warning" : "neutral"}
+                      variant={s.locked ? "tinted" : "ghost"}
+                      onClick={() => toggleLock(s.food.id!)}
+                      title={s.locked ? "Locked — auto-balance will not change" : "Unlocked"}
+                    >
+                      {s.locked ? (
+                        <Lock className="h-[18px] w-[18px]" />
+                      ) : (
+                        <LockOpen className="h-[18px] w-[18px]" />
+                      )}
+                    </IconButton>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold">{s.food.name}</div>
+                      <div className="truncate text-xs tabular-nums text-fg-3">
+                        {s.food.kcalPer100} kcal · {s.food.proteinPer100}P ·{" "}
+                        {s.food.fatPer100}F · {s.food.carbPer100}C
+                      </div>
+                    </div>
+                    <IconButton
+                      label="Remove"
+                      tone="neutral"
+                      variant="ghost"
+                      onClick={() => removeFood(s.food.id!)}
+                    >
+                      <X className="h-[18px] w-[18px]" />
+                    </IconButton>
+                  </div>
+                  <div className="pl-12">
+                    <GramsStepper
+                      value={s.grams}
+                      onChange={(v) => setGrams(s.food.id!, v)}
+                      unit={s.food.unit}
+                    />
                   </div>
                 </div>
-                <button
-                  aria-label="Remove"
-                  className="flex h-8 w-8 items-center justify-center text-neutral-400 active:text-neutral-600"
-                  onClick={() => removeFood(s.food.id!)}
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="pl-10">
-                <GramsStepper
-                  value={s.grams}
-                  onChange={(v) => setGrams(s.food.id!, v)}
-                  unit={s.food.unit}
+              ))}
+            </div>
+          )}
+
+          {selected.length === 0 && (
+            <div className="card mb-4 text-center text-sm text-fg-3">
+              Add a food or load a combo to start building this meal.
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Bottom action bar */}
+      <div
+        className="border-t border-hairline bg-surface-2/95 px-4 pt-3 backdrop-blur"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        <div className="flex gap-2">
+          <button
+            className="btn-secondary flex flex-1 items-center justify-center gap-1 text-sm"
+            onClick={() => setShowPicker(true)}
+          >
+            <Plus className="h-4 w-4" /> Add food
+          </button>
+          {combos.length > 0 && (
+            <button
+              className="btn-secondary flex flex-1 items-center justify-center gap-1 text-sm"
+              onClick={() => setShowCombos(true)}
+            >
+              <Copy className="h-4 w-4" /> Load combo
+            </button>
+          )}
+        </div>
+        {selected.length > 0 && (
+          <button
+            className="btn-primary mt-2 w-full"
+            disabled={saving}
+            onClick={handleLog}
+          >
+            {saving ? "Saving…" : "Log meal"}
+          </button>
+        )}
+      </div>
+
+      <Sheet
+        open={showPicker}
+        onClose={() => {
+          setShowPicker(false);
+          setSearch("");
+        }}
+        title="Add food"
+      >
+        <div className="relative mb-3">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-3" />
+          <input
+            autoFocus
+            className="input pl-9 pr-9"
+            placeholder="Search foods…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button
+              aria-label="Clear search"
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-fg-3 active:bg-surface-3"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <div className="space-y-1">
+          {filteredFoods.map((f) => (
+            <div
+              key={f.id}
+              className="flex items-center gap-1 rounded-xl active:bg-surface-3"
+            >
+              <IconButton
+                label={f.favorite ? "Unfavorite" : "Favorite"}
+                tone={f.favorite ? "warning" : "neutral"}
+                variant="ghost"
+                onClick={() => toggleFav(f.id!)}
+              >
+                <Star
+                  className="h-[18px] w-[18px]"
+                  fill={f.favorite ? "currentColor" : "none"}
                 />
-              </div>
+              </IconButton>
+              <button
+                className="min-w-0 flex-1 py-2 text-left"
+                onClick={() => addFood(f)}
+              >
+                <div className="truncate text-sm font-semibold">{f.name}</div>
+                <div className="truncate text-xs tabular-nums text-fg-3">
+                  {f.kcalPer100} kcal · {f.proteinPer100}P · {f.fatPer100}F ·{" "}
+                  {f.carbPer100}C / 100{f.unit}
+                </div>
+              </button>
+            </div>
+          ))}
+          {filteredFoods.length === 0 && (
+            <p className="py-8 text-center text-sm text-fg-3">No foods found</p>
+          )}
+        </div>
+      </Sheet>
+
+      <Sheet
+        open={showCombos}
+        onClose={() => setShowCombos(false)}
+        title="Combos"
+      >
+        <div className="space-y-1">
+          {combos.map((c) => (
+            <div key={c.id} className="flex items-center gap-1">
+              <button
+                className="min-w-0 flex-1 rounded-xl py-3 text-left active:bg-surface-3"
+                onClick={() => loadCombo(c)}
+              >
+                <div className="truncate text-sm font-semibold">{c.name}</div>
+                <div className="text-xs text-fg-3">
+                  {c.items.length} food{c.items.length !== 1 ? "s" : ""}
+                </div>
+              </button>
+              <IconButton
+                label="Delete combo"
+                tone="danger"
+                variant="ghost"
+                onClick={() => handleDeleteCombo(c.id!)}
+              >
+                <Trash2 className="h-[18px] w-[18px]" />
+              </IconButton>
             </div>
           ))}
         </div>
-      )}
+      </Sheet>
 
-      {showSaveCombo && (
-        <div className="card mb-4">
-          <h3 className="mb-2 font-semibold">Save as combo</h3>
-          <input
-            autoFocus
-            className="input mb-3"
-            placeholder="Combo name (e.g. 'Chicken & Rice')"
-            value={comboName}
-            onChange={(e) => setComboName(e.target.value)}
-          />
+      <Sheet
+        open={showSaveCombo}
+        onClose={() => {
+          setShowSaveCombo(false);
+          setComboName("");
+        }}
+        title="Save as combo"
+        footer={
           <div className="flex gap-2">
             <button
-              className="btn-secondary flex-1 text-sm"
-              onClick={() => { setShowSaveCombo(false); setComboName(""); }}
+              className="btn-secondary flex-1"
+              onClick={() => {
+                setShowSaveCombo(false);
+                setComboName("");
+              }}
             >
               Cancel
             </button>
             <button
-              className="btn-primary flex-1 text-sm"
+              className="btn-primary flex-1"
               disabled={!comboName.trim()}
               onClick={handleSaveCombo}
             >
               Save
             </button>
           </div>
-        </div>
-      )}
-
-      {!showPicker && !showCombos && !showSaveCombo && (
-        <div className="flex gap-2">
-          <button className="btn-secondary flex-1" onClick={() => setShowPicker(true)}>
-            + Add food
-          </button>
-          {combos.length > 0 && (
-            <button className="btn-secondary flex-1" onClick={() => setShowCombos(true)}>
-              Load combo
-            </button>
-          )}
-        </div>
-      )}
-
-      {showCombos && (
-        <div className="card mt-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="font-semibold">Combos</h3>
-            <button
-              className="text-sm text-neutral-500"
-              onClick={() => setShowCombos(false)}
-            >
-              Cancel
-            </button>
-          </div>
-          <div className="space-y-1">
-            {combos.map((c) => (
-              <div key={c.id} className="flex items-center gap-2 rounded-lg p-2 hover:bg-neutral-50">
-                <button
-                  className="flex-1 text-left"
-                  onClick={() => loadCombo(c)}
-                >
-                  <div className="text-sm font-medium">{c.name}</div>
-                  <div className="text-xs text-neutral-500">
-                    {c.items.length} food{c.items.length !== 1 ? "s" : ""}
-                  </div>
-                </button>
-                <button
-                  className="text-xs text-red-500"
-                  onClick={() => handleDeleteCombo(c.id!)}
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {showPicker && (
-        <div className="card mt-3">
-          <input
-            autoFocus
-            className="input mb-3"
-            placeholder="Search foods…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <div className="max-h-80 space-y-1 overflow-y-auto">
-            {filteredFoods.map((f) => (
-              <div
-                key={f.id}
-                className="flex items-center gap-2 rounded-lg p-2 hover:bg-neutral-50"
-              >
-                <button
-                  className="p-1 text-base leading-none"
-                  aria-label={f.favorite ? "Unfavorite" : "Favorite"}
-                  onClick={() => toggleFav(f.id!)}
-                >
-                  <span className={f.favorite ? "text-amber-400" : "text-neutral-300"}>
-                    ★
-                  </span>
-                </button>
-                <button
-                  className="min-w-0 flex-1 text-left"
-                  onClick={() => addFood(f)}
-                >
-                  <div className="truncate text-sm font-medium">{f.name}</div>
-                  <div className="truncate text-xs text-neutral-500">
-                    {f.kcalPer100} kcal · {f.proteinPer100}P · {f.fatPer100}F ·{" "}
-                    {f.carbPer100}C / 100{f.unit}
-                  </div>
-                </button>
-              </div>
-            ))}
-            {filteredFoods.length === 0 && (
-              <p className="py-4 text-center text-sm text-neutral-500">
-                No foods found
-              </p>
-            )}
-          </div>
-          <button
-            className="mt-2 w-full text-center text-sm text-neutral-500"
-            onClick={() => {
-              setShowPicker(false);
-              setSearch("");
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {selected.length > 0 && !showSaveCombo && (
-        <button
-          className="btn-primary mt-4 w-full"
-          disabled={saving}
-          onClick={handleLog}
-        >
-          {saving ? "Saving…" : "Log meal"}
-        </button>
-      )}
-    </main>
+        }
+      >
+        <input
+          autoFocus
+          className="input"
+          placeholder="Combo name (e.g. 'Chicken & Rice')"
+          value={comboName}
+          onChange={(e) => setComboName(e.target.value)}
+        />
+        <p className="mt-2 text-xs text-fg-3">
+          Saves the current foods and grams. Locked status is preserved.
+        </p>
+      </Sheet>
+    </>
   );
 }
 
 export default function MealPage() {
   return (
-    <Suspense fallback={<main className="flex-1 overflow-y-auto p-4"><Header title="Meal" back="/today" /></main>}>
+    <Suspense
+      fallback={
+        <main className="flex-1 overflow-y-auto">
+          <Header title="Meal" back="/today" />
+        </main>
+      }
+    >
       <MealDetail />
     </Suspense>
   );

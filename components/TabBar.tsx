@@ -2,30 +2,51 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ComponentType, SVGProps } from "react";
+import { Home, BookOpen, CalendarDays, Scale, LineChart } from "@/components/ui/Icon";
 
-const TABS = [
-  { href: "/today", label: "Today" },
-  { href: "/foods", label: "Foods" },
-  { href: "/schedule", label: "Schedule" },
-  { href: "/weight", label: "Weight" },
-  { href: "/review", label: "Review" },
+type Tab = {
+  href: string;
+  label: string;
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+};
+
+const TABS: Tab[] = [
+  { href: "/today", label: "Today", icon: Home },
+  { href: "/foods", label: "Foods", icon: BookOpen },
+  { href: "/schedule", label: "Schedule", icon: CalendarDays },
+  { href: "/weight", label: "Weight", icon: Scale },
+  { href: "/review", label: "Review", icon: LineChart },
 ];
 
 export function TabBar() {
   const pathname = usePathname();
   return (
-    <nav className="flex flex-shrink-0 justify-around border-t border-neutral-200 bg-white pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2">
+    <nav
+      className="flex flex-shrink-0 justify-around border-t border-hairline bg-surface-2/95 px-1 pt-1 backdrop-blur"
+      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
+    >
       {TABS.map((t) => {
         const active = pathname?.startsWith(t.href);
+        const Icon = t.icon;
         return (
           <Link
             key={t.href}
             href={t.href}
-            className={`flex flex-col items-center px-3 py-1 text-xs font-medium ${
-              active ? "text-brand-600" : "text-neutral-500"
+            className={`flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1 transition-transform active:scale-95 ${
+              active ? "text-brand-600" : "text-fg-3"
             }`}
+            aria-current={active ? "page" : undefined}
           >
-            {t.label}
+            <Icon
+              className="h-[26px] w-[26px]"
+              strokeWidth={active ? 2.4 : 1.9}
+              fill={active ? "currentColor" : "none"}
+              fillOpacity={active ? 0.12 : 0}
+            />
+            <span className={`text-[10px] font-medium ${active ? "text-brand-600" : "text-fg-3"}`}>
+              {t.label}
+            </span>
           </Link>
         );
       })}

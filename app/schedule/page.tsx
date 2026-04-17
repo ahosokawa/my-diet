@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/Header";
 import { TabBar } from "@/components/TabBar";
-import {
-  getSchedule,
-  saveWholeSchedule,
-} from "@/lib/db/repos";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { Sheet } from "@/components/ui/Sheet";
+import { ChevronDown, ChevronUp, Dumbbell, Copy, Check } from "@/components/ui/Icon";
+import { haptic } from "@/lib/ui/haptics";
+import { getSchedule, saveWholeSchedule } from "@/lib/db/repos";
 import type { ScheduleDay } from "@/lib/db/schema";
 import { WEEKDAY_LABELS, defaultMealTimes, copyTo, toMinutes } from "@/lib/schedule/week";
+
+const SHORT_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
 export default function SchedulePage() {
   const [days, setDays] = useState<ScheduleDay[]>([]);
@@ -16,20 +20,19 @@ export default function SchedulePage() {
   const [copyFrom, setCopyFrom] = useState<number | null>(null);
   const [copyTargets, setCopyTargets] = useState<Set<number>>(new Set());
   const [saved, setSaved] = useState(false);
+  const scrollRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     getSchedule().then(setDays);
   }, []);
 
-  const persist = useCallback(
-    async (updated: ScheduleDay[]) => {
-      setDays(updated);
-      await saveWholeSchedule(updated);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    },
-    []
-  );
+  const persist = useCallback(async (updated: ScheduleDay[]) => {
+    setDays(updated);
+    await saveWholeSchedule(updated);
+    setSaved(true);
+    haptic("success");
+    setTimeout(() => setSaved(false), 1500);
+  }, []);
 
   function updateDay(weekday: number, patch: Partial<ScheduleDay>) {
     const next = days.map((d) => (d.weekday === weekday ? { ...d, ...patch } : d));
@@ -38,9 +41,10 @@ export default function SchedulePage() {
 
   function setMealCount(weekday: number, count: number) {
     const day = days.find((d) => d.weekday === weekday);
-    const workoutEnd = day?.workoutStart && day.workoutDurationMin
-      ? minutesToHhmm(toMinutes(day.workoutStart) + day.workoutDurationMin)
-      : undefined;
+    const workoutEnd =
+      day?.workoutStart && day.workoutDurationMin
+        ? minutesToHhmm(toMinutes(day.workoutStart) + day.workoutDurationMin)
+        : undefined;
     updateDay(weekday, { mealTimes: defaultMealTimes(count, workoutEnd) });
   }
 
@@ -56,11 +60,6 @@ export default function SchedulePage() {
       else next.add(weekday);
       return next;
     });
-  }
-
-  function selectPreset(preset: "weekdays" | "all") {
-    const targets = preset === "weekdays" ? [1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6];
-    setCopyTargets(new Set(targets.filter((d) => d !== copyFrom)));
   }
 
   function applyCopy() {
@@ -79,50 +78,168 @@ export default function SchedulePage() {
 
   return (
     <>
-      <main className="flex-1 overflow-y-auto p-4">
-        <Header title="Schedule" />
+      <main ref={scrollRef} className="flex-1 overflow-y-auto">
+        <Header title="Schedule" back="/today" scrollRef={scrollRef} />
 
-      {copyFrom !== null && (
-        <div className="card mb-4">
-          <h3 className="mb-2 font-semibold">
-            Copy {WEEKDAY_LABELS[copyFrom]} to:
-          </h3>
-          <div className="mb-3 flex flex-wrap gap-2">
+        <div className="px-4 pb-4">
+          <div className="space-y-2">
             {days.map((d) => {
-              if (d.weekday === copyFrom) return null;
-              const selected = copyTargets.has(d.weekday);
+              const isEditing = editing === d.weekday;
               return (
-                <button
-                  key={d.weekday}
-                  onClick={() => toggleCopyTarget(d.weekday)}
-                  className={`rounded-lg px-3 py-2 text-sm font-medium ${
-                    selected
-                      ? "bg-brand-500 text-white"
-                      : "bg-neutral-100 text-neutral-700"
-                  }`}
-                >
-                  {WEEKDAY_LABELS[d.weekday]}
-                </button>
+                <div key={d.weekday} className="card !p-0 overflow-hidden">
+                  <button
+                    className="flex w-full items-center justify-between px-4 py-3 text-left active:bg-surface-3"
+                    onClick={() => setEditing(isEditing ? null : d.weekday)}
+                    aria-expanded={isEditing}
+                  >
+                    <span className="font-semibold">{WEEKDAY_LABELS[d.weekday]}</span>
+                    <div className="flex items-center gap-2 text-sm text-fg-3">
+                      <span className="tabular-nums">
+                        {d.mealTimes.length} meal{d.mealTimes.length !== 1 ? "s" : ""}
+                      </span>
+                      {d.workoutStart && (
+                        <span className="inline-flex items-center gap-1 text-fg-2">
+                          <Dumbbell className="h-3.5 w-3.5" /> {d.workoutStart}
+                        </span>
+                      )}
+                      {isEditing ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </div>
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {isEditing && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.18 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="space-y-4 border-t border-hairline px-4 py-4">
+                          <div>
+                            <label className="label">Meals per day</label>
+                            <SegmentedControl
+                              size="sm"
+                              value={d.mealTimes.length}
+                              onChange={(v) => setMealCount(d.weekday, v)}
+                              options={[1, 2, 3, 4, 5, 6].map((n) => ({
+                                value: n,
+                                label: String(n),
+                              }))}
+                              ariaLabel="Meals per day"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="label">Meal times</label>
+                            <div className="space-y-1.5">
+                              {d.mealTimes.map((t, i) => (
+                                <input
+                                  key={i}
+                                  type="time"
+                                  className="input"
+                                  value={t}
+                                  onChange={(e) => {
+                                    const times = [...d.mealTimes];
+                                    times[i] = e.target.value;
+                                    updateDay(d.weekday, { mealTimes: times });
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="label">Workout (optional)</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="time"
+                                className="input"
+                                placeholder="Start"
+                                value={d.workoutStart ?? ""}
+                                onChange={(e) =>
+                                  updateDay(d.weekday, {
+                                    workoutStart: e.target.value || undefined,
+                                  })
+                                }
+                              />
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                placeholder="min"
+                                className="input w-24"
+                                value={d.workoutDurationMin ?? ""}
+                                onChange={(e) =>
+                                  updateDay(d.weekday, {
+                                    workoutDurationMin: e.target.value
+                                      ? Number(e.target.value)
+                                      : undefined,
+                                  })
+                                }
+                              />
+                            </div>
+                            {d.workoutStart && (
+                              <button
+                                className="mt-2 text-xs font-medium text-red-500"
+                                onClick={() =>
+                                  updateDay(d.weekday, {
+                                    workoutStart: undefined,
+                                    workoutDurationMin: undefined,
+                                  })
+                                }
+                              >
+                                Remove workout
+                              </button>
+                            )}
+                          </div>
+
+                          <button
+                            className="btn-secondary flex w-full items-center justify-center gap-2 text-sm"
+                            onClick={() => startCopy(d.weekday)}
+                          >
+                            <Copy className="h-4 w-4" /> Copy this day to…
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               );
             })}
           </div>
-          <div className="mb-3 flex gap-2">
-            <button
-              className="text-xs font-medium text-brand-600"
-              onClick={() => selectPreset("weekdays")}
-            >
-              Mon–Fri
-            </button>
-            <button
-              className="text-xs font-medium text-brand-600"
-              onClick={() => selectPreset("all")}
-            >
-              All days
+
+          <div className="mt-4">
+            <button className="btn-primary w-full" onClick={save}>
+              {saved ? (
+                <span className="inline-flex items-center gap-1">
+                  <Check className="h-4 w-4" /> Saved
+                </span>
+              ) : (
+                "Save schedule"
+              )}
             </button>
           </div>
+        </div>
+      </main>
+      <TabBar />
+
+      <Sheet
+        open={copyFrom !== null}
+        onClose={() => {
+          setCopyFrom(null);
+          setCopyTargets(new Set());
+        }}
+        title={
+          copyFrom !== null ? `Copy ${WEEKDAY_LABELS[copyFrom]} to…` : ""
+        }
+        footer={
           <div className="flex gap-2">
             <button
-              className="btn-secondary flex-1 text-sm"
+              className="btn-secondary flex-1"
               onClick={() => {
                 setCopyFrom(null);
                 setCopyTargets(new Set());
@@ -131,142 +248,53 @@ export default function SchedulePage() {
               Cancel
             </button>
             <button
-              className="btn-primary flex-1 text-sm"
+              className="btn-primary flex-1"
               disabled={copyTargets.size === 0}
               onClick={applyCopy}
             >
-              Paste to {copyTargets.size} day{copyTargets.size !== 1 ? "s" : ""}
+              Paste to {copyTargets.size}
             </button>
           </div>
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {days.map((d) => {
-          const isEditing = editing === d.weekday;
-          return (
-            <div
-              key={d.weekday}
-              className="card cursor-pointer"
-              onClick={() => setEditing(isEditing ? null : d.weekday)}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">
-                  {WEEKDAY_LABELS[d.weekday]}
-                </span>
-                <span className="text-sm text-neutral-500">
-                  {d.mealTimes.length} meals
-                  {d.workoutStart ? ` · 🏋️ ${d.workoutStart}` : ""}
-                </span>
-              </div>
-
-              {isEditing && (
-                <div
-                  className="mt-3 space-y-3"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div>
-                    <label className="label">Meals per day</label>
-                    <div className="flex gap-1.5">
-                      {[1, 2, 3, 4, 5, 6].map((n) => (
-                        <button
-                          key={n}
-                          onClick={() => setMealCount(d.weekday, n)}
-                          className={`flex-1 rounded-lg py-2 text-sm font-medium ${
-                            d.mealTimes.length === n
-                              ? "bg-brand-500 text-white"
-                              : "bg-neutral-100"
-                          }`}
-                        >
-                          {n}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="label">Meal times</label>
-                    <div className="space-y-1.5">
-                      {d.mealTimes.map((t, i) => (
-                        <input
-                          key={i}
-                          type="time"
-                          className="input"
-                          value={t}
-                          onChange={(e) => {
-                            const times = [...d.mealTimes];
-                            times[i] = e.target.value;
-                            updateDay(d.weekday, { mealTimes: times });
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="label">Workout time (optional)</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="time"
-                        className="input"
-                        value={d.workoutStart ?? ""}
-                        onChange={(e) =>
-                          updateDay(d.weekday, {
-                            workoutStart: e.target.value || undefined,
-                          })
-                        }
-                      />
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        placeholder="min"
-                        className="input w-24"
-                        value={d.workoutDurationMin ?? ""}
-                        onChange={(e) =>
-                          updateDay(d.weekday, {
-                            workoutDurationMin: e.target.value
-                              ? Number(e.target.value)
-                              : undefined,
-                          })
-                        }
-                      />
-                    </div>
-                    {d.workoutStart && (
-                      <button
-                        className="mt-1 text-xs text-red-500"
-                        onClick={() =>
-                          updateDay(d.weekday, {
-                            workoutStart: undefined,
-                            workoutDurationMin: undefined,
-                          })
-                        }
-                      >
-                        Remove workout
-                      </button>
-                    )}
-                  </div>
-
-                  <button
-                    className="btn-secondary w-full text-sm"
-                    onClick={() => startCopy(d.weekday)}
+        }
+      >
+        <div className="space-y-1">
+          {days.map((d) => {
+            if (d.weekday === copyFrom) return null;
+            const selected = copyTargets.has(d.weekday);
+            return (
+              <button
+                key={d.weekday}
+                onClick={() => toggleCopyTarget(d.weekday)}
+                className="flex w-full items-center justify-between rounded-xl px-3 py-3 active:bg-surface-3"
+              >
+                <span className="flex items-center gap-3">
+                  <span
+                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                      selected
+                        ? "bg-brand-500 text-white"
+                        : "bg-surface-3 text-fg-2"
+                    }`}
                   >
-                    Copy this day to…
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-4 flex">
-        <button className="btn-primary flex-1" onClick={save}>
-          {saved ? "Saved ✓" : "Save schedule"}
-        </button>
-      </div>
-
-      </main>
-      <TabBar />
+                    {SHORT_LABELS[d.weekday]}
+                  </span>
+                  <span className="text-sm font-medium">
+                    {WEEKDAY_LABELS[d.weekday]}
+                  </span>
+                </span>
+                <span
+                  className={`flex h-6 w-6 items-center justify-center rounded-md border ${
+                    selected
+                      ? "border-brand-500 bg-brand-500 text-white"
+                      : "border-hairline"
+                  }`}
+                >
+                  {selected && <Check className="h-4 w-4" strokeWidth={3} />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Sheet>
     </>
   );
 }

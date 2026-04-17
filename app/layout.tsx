@@ -14,19 +14,32 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "my-diet",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#26a55e",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
+    { media: "(prefers-color-scheme: dark)", color: "#09090b" },
+  ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
 };
+
+const darkBootstrap = `
+try {
+  var m = window.matchMedia('(prefers-color-scheme: dark)');
+  if (m.matches) document.documentElement.classList.add('dark');
+  m.addEventListener('change', function(e){
+    document.documentElement.classList.toggle('dark', e.matches);
+  });
+} catch(e) {}
+`;
 
 export default function RootLayout({
   children,
@@ -35,8 +48,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: darkBootstrap }} />
+      </head>
       <body>
-        <div className="absolute inset-0 mx-auto flex max-w-md flex-col">{children}</div>
+        <div className="absolute inset-0 mx-auto flex max-w-md flex-col bg-surface">
+          {children}
+        </div>
         <NotificationBootstrap />
         <script
           dangerouslySetInnerHTML={{

@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Header } from "@/components/Header";
 import { TabBar } from "@/components/TabBar";
+import { Toggle } from "@/components/ui/Toggle";
+import { Bell } from "@/components/ui/Icon";
 import {
   DEFAULT_NOTIF_PREFS,
   getNotifPrefs,
@@ -34,6 +36,7 @@ export default function SettingsPage() {
   const [hasTrigger, setHasTrigger] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -105,7 +108,7 @@ export default function SettingsPage() {
       <>
         <main className="flex-1 overflow-y-auto p-4">
           <Header title="Settings" back="/today" />
-          <p className="mt-12 text-center text-neutral-500">Loading…</p>
+          <p className="mt-12 text-center text-fg-3">Loading…</p>
         </main>
         <TabBar />
       </>
@@ -118,128 +121,134 @@ export default function SettingsPage() {
 
   return (
     <>
-      <main className="flex-1 overflow-y-auto p-4">
-        <Header title="Settings" back="/today" />
+      <main ref={scrollRef} className="flex-1 overflow-y-auto">
+        <Header title="Settings" back="/today" scrollRef={scrollRef} />
 
-        <div className="card mb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold">Reminders</h2>
-              <p className="text-xs text-neutral-500">
-                {!supported
-                  ? "Not supported in this browser."
-                  : granted
-                  ? prefs.enabled
-                    ? "On"
-                    : "Permission granted — turn on to schedule."
-                  : perm === "denied"
-                  ? "Blocked in browser/OS settings."
-                  : "Tap to request permission."}
-              </p>
+        <div className="px-4 pb-4">
+          {/* Reminders header card */}
+          <div className="card mb-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
+                <Bell className="h-5 w-5" />
+              </span>
+              <div className="flex-1">
+                <h2 className="font-semibold">Reminders</h2>
+                <p className="text-xs text-fg-3">
+                  {!supported
+                    ? "Not supported in this browser"
+                    : granted
+                    ? prefs.enabled
+                      ? "Active"
+                      : "Permission granted"
+                    : perm === "denied"
+                    ? "Blocked in OS settings"
+                    : "Tap to request permission"}
+                </p>
+              </div>
+              <Toggle
+                label="Enable reminders"
+                checked={!!prefs.enabled}
+                onChange={onToggleEnable}
+                disabled={saving || !supported}
+              />
             </div>
-            <button
-              className={`rounded-full px-4 py-1.5 text-sm font-medium ${
-                prefs.enabled
-                  ? "bg-brand-500 text-white active:bg-brand-600"
-                  : "bg-neutral-200 text-neutral-700 active:bg-neutral-300"
-              }`}
-              disabled={saving || !supported}
-              onClick={onToggleEnable}
-            >
-              {prefs.enabled ? "On" : "Off"}
-            </button>
+            {isIOSLike && prefs.enabled && (
+              <p className="mt-3 rounded-xl bg-amber-50 p-2.5 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                This device doesn't support scheduled notifications. Reminders only fire while the app is open. For reliable alerts, install the PWA to your Home Screen and keep it open near your meal times.
+              </p>
+            )}
           </div>
-          {isIOSLike && prefs.enabled && (
-            <p className="mt-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">
-              This device doesn't support scheduled notifications. Reminders
-              only fire while the app is open. For reliable alerts, install the
-              PWA to your Home Screen and keep it open near your meal times.
+
+          {/* Grouped list */}
+          <h3 className="mx-2 mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-fg-3">
+            Meals
+          </h3>
+          <div className={`card !p-0 mb-3 overflow-hidden ${!prefs.enabled ? "opacity-50" : ""}`}>
+            <label className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="text-sm">Remind me</span>
+              <select
+                className="rounded-lg bg-surface-3 px-2 py-1.5 text-sm font-medium text-fg-1 outline-none"
+                value={prefs.mealLeadMin}
+                disabled={!prefs.enabled || saving}
+                onChange={(e) =>
+                  save({ ...prefs, mealLeadMin: Number(e.target.value) })
+                }
+              >
+                {LEAD_OPTIONS.map((m) => (
+                  <option key={m} value={m}>
+                    {m === 0 ? "At meal time" : `${m} min before`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <h3 className="mx-2 mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-fg-3">
+            Morning weigh-in
+          </h3>
+          <div className={`card !p-0 mb-3 overflow-hidden ${!prefs.enabled ? "opacity-50" : ""}`}>
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="text-sm">Enabled</span>
+              <Toggle
+                label="Morning weigh-in"
+                checked={!!prefs.weighInEnabled}
+                disabled={!prefs.enabled || saving}
+                onChange={(v) => save({ ...prefs, weighInEnabled: v ? 1 : 0 })}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-3">
+              <span className="text-sm">Time</span>
+              <input
+                type="time"
+                className="rounded-lg bg-surface-3 px-2 py-1.5 text-sm font-medium text-fg-1 outline-none"
+                value={prefs.weighInTime}
+                disabled={!prefs.enabled || !prefs.weighInEnabled || saving}
+                onChange={(e) => save({ ...prefs, weighInTime: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <h3 className="mx-2 mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-fg-3">
+            Weekly review (Friday)
+          </h3>
+          <div className={`card !p-0 mb-3 overflow-hidden ${!prefs.enabled ? "opacity-50" : ""}`}>
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="text-sm">Enabled</span>
+              <Toggle
+                label="Weekly review"
+                checked={!!prefs.reviewEnabled}
+                disabled={!prefs.enabled || saving}
+                onChange={(v) => save({ ...prefs, reviewEnabled: v ? 1 : 0 })}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-3">
+              <span className="text-sm">Time</span>
+              <input
+                type="time"
+                className="rounded-lg bg-surface-3 px-2 py-1.5 text-sm font-medium text-fg-1 outline-none"
+                value={prefs.reviewTime}
+                disabled={!prefs.enabled || !prefs.reviewEnabled || saving}
+                onChange={(e) => save({ ...prefs, reviewTime: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {granted && (
+            <button
+              className="btn-secondary mt-4 w-full"
+              onClick={onTest}
+              disabled={saving}
+            >
+              Send test notification
+            </button>
+          )}
+
+          {status && (
+            <p className="mt-4 rounded-xl bg-surface-3 p-3 text-sm text-fg-2">
+              {status}
             </p>
           )}
         </div>
-
-        <div className={`card mb-4 ${!prefs.enabled ? "opacity-50" : ""}`}>
-          <h3 className="mb-3 font-semibold">Meals</h3>
-          <label className="block text-sm text-neutral-600">
-            Remind me
-            <select
-              className="input mt-1"
-              value={prefs.mealLeadMin}
-              disabled={!prefs.enabled || saving}
-              onChange={(e) =>
-                save({ ...prefs, mealLeadMin: Number(e.target.value) })
-              }
-            >
-              {LEAD_OPTIONS.map((m) => (
-                <option key={m} value={m}>
-                  {m === 0 ? "At meal time" : `${m} min before`}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className={`card mb-4 ${!prefs.enabled ? "opacity-50" : ""}`}>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-semibold">Morning weigh-in</h3>
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-brand-500"
-              checked={!!prefs.weighInEnabled}
-              disabled={!prefs.enabled || saving}
-              onChange={(e) =>
-                save({ ...prefs, weighInEnabled: e.target.checked ? 1 : 0 })
-              }
-            />
-          </div>
-          <label className="block text-sm text-neutral-600">
-            Time
-            <input
-              type="time"
-              className="input mt-1"
-              value={prefs.weighInTime}
-              disabled={!prefs.enabled || !prefs.weighInEnabled || saving}
-              onChange={(e) => save({ ...prefs, weighInTime: e.target.value })}
-            />
-          </label>
-        </div>
-
-        <div className={`card mb-4 ${!prefs.enabled ? "opacity-50" : ""}`}>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-semibold">Weekly review (Friday)</h3>
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-brand-500"
-              checked={!!prefs.reviewEnabled}
-              disabled={!prefs.enabled || saving}
-              onChange={(e) =>
-                save({ ...prefs, reviewEnabled: e.target.checked ? 1 : 0 })
-              }
-            />
-          </div>
-          <label className="block text-sm text-neutral-600">
-            Time
-            <input
-              type="time"
-              className="input mt-1"
-              value={prefs.reviewTime}
-              disabled={!prefs.enabled || !prefs.reviewEnabled || saving}
-              onChange={(e) => save({ ...prefs, reviewTime: e.target.value })}
-            />
-          </label>
-        </div>
-
-        {granted && (
-          <button className="btn-secondary w-full" onClick={onTest} disabled={saving}>
-            Send test notification
-          </button>
-        )}
-
-        {status && (
-          <p className="mt-4 rounded-lg bg-neutral-100 p-3 text-sm text-neutral-700">
-            {status}
-          </p>
-        )}
       </main>
       <TabBar />
     </>

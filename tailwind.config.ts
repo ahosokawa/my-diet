@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
     extend: {
@@ -17,6 +18,19 @@ const config: Config = {
           800: "#135433",
           900: "#11452b",
         },
+        surface: "rgb(var(--surface) / <alpha-value>)",
+        "surface-2": "rgb(var(--surface-2) / <alpha-value>)",
+        "surface-3": "rgb(var(--surface-3) / <alpha-value>)",
+        "fg-1": "rgb(var(--fg-1) / <alpha-value>)",
+        "fg-2": "rgb(var(--fg-2) / <alpha-value>)",
+        "fg-3": "rgb(var(--fg-3) / <alpha-value>)",
+        hairline: "rgb(var(--hairline) / <alpha-value>)",
+      },
+      spacing: {
+        "safe-top": "env(safe-area-inset-top)",
+        "safe-bottom": "env(safe-area-inset-bottom)",
+        "safe-left": "env(safe-area-inset-left)",
+        "safe-right": "env(safe-area-inset-right)",
       },
       fontFamily: {
         sans: [

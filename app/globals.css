@@ -2,6 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --surface: 250 250 250;
+  --surface-2: 255 255 255;
+  --surface-3: 244 244 245;
+  --fg-1: 17 17 17;
+  --fg-2: 82 82 91;
+  --fg-3: 161 161 170;
+  --hairline: 228 228 231;
+}
+
+.dark {
+  --surface: 9 9 11;
+  --surface-2: 24 24 27;
+  --surface-3: 39 39 42;
+  --fg-1: 244 244 245;
+  --fg-2: 161 161 170;
+  --fg-3: 113 113 122;
+  --hairline: 39 39 42;
+}
+
 html {
   height: 100%;
   height: -webkit-fill-available;
@@ -9,6 +29,7 @@ html {
   margin: 0;
   padding: 0;
   -webkit-tap-highlight-color: transparent;
+  background: rgb(var(--surface));
 }
 
 body {
@@ -19,26 +40,60 @@ body {
   padding: 0;
   overflow: hidden;
   overscroll-behavior: contain;
-  background: #fafafa;
-  color: #111;
+  background: rgb(var(--surface));
+  color: rgb(var(--fg-1));
   -webkit-font-smoothing: antialiased;
   text-size-adjust: 100%;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@layer base {
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid rgba(38, 165, 94, 0.6);
+    outline-offset: 2px;
+  }
+  button,
+  [role="button"],
+  a {
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+}
+
 @layer components {
   .card {
-    @apply rounded-2xl bg-white p-4 shadow-[0_1px_0_rgba(0,0,0,0.04),0_4px_16px_rgba(0,0,0,0.04)];
+    @apply rounded-2xl bg-surface-2 p-4 shadow-[0_1px_0_rgba(0,0,0,0.04),0_4px_16px_rgba(0,0,0,0.04)];
+  }
+  .dark .card {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04),
+      0 4px 16px rgba(0, 0, 0, 0.3);
   }
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-full bg-brand-500 px-5 py-3 font-semibold text-white active:bg-brand-600 disabled:opacity-50;
+    @apply inline-flex min-h-[44px] items-center justify-center rounded-full bg-brand-500 px-5 py-3 font-semibold text-white transition-transform active:scale-[0.97] active:bg-brand-600 disabled:opacity-50;
   }
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-full bg-neutral-100 px-5 py-3 font-semibold text-neutral-900 active:bg-neutral-200;
+    @apply inline-flex min-h-[44px] items-center justify-center rounded-full bg-surface-3 px-5 py-3 font-semibold text-fg-1 transition-transform active:scale-[0.97] active:bg-hairline;
   }
   .input {
-    @apply w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-base outline-none focus:border-brand-400;
+    @apply w-full rounded-xl border border-hairline bg-surface-2 px-4 py-3 text-base text-fg-1 outline-none placeholder:text-fg-3 focus:border-brand-400;
   }
   .label {
-    @apply mb-1 block text-sm font-medium text-neutral-600;
+    @apply mb-1 block text-sm font-medium text-fg-2;
+  }
+  .hairline {
+    @apply border-hairline;
   }
 }
