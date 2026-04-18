@@ -136,6 +136,14 @@ export async function addWeight(w: Omit<WeightEntry, "id">): Promise<void> {
   await db.weights.put(w);
 }
 
+export async function updateWeight(id: number, lbs: number): Promise<void> {
+  await db.weights.update(id, { lbs });
+}
+
+export async function deleteWeight(id: number): Promise<void> {
+  await db.weights.delete(id);
+}
+
 export async function listWeights(limit = 60): Promise<WeightEntry[]> {
   const all = await db.weights.orderBy("date").reverse().limit(limit).toArray();
   return all.reverse();

@@ -10,6 +10,8 @@
   --fg-2: 82 82 91;
   --fg-3: 161 161 170;
   --hairline: 228 228 231;
+  --danger: 220 38 38;
+  --danger-strong: 185 28 28;
 }
 
 .dark {
@@ -20,6 +22,8 @@
   --fg-2: 161 161 170;
   --fg-3: 113 113 122;
   --hairline: 39 39 42;
+  --danger: 239 68 68;
+  --danger-strong: 220 38 38;
 }
 
 html {
@@ -86,6 +90,15 @@ body {
   }
   .btn-secondary {
     @apply inline-flex min-h-[44px] items-center justify-center rounded-full bg-surface-3 px-5 py-3 font-semibold text-fg-1 transition-transform active:scale-[0.97] active:bg-hairline;
+  }
+  .btn-danger {
+    @apply inline-flex min-h-[44px] items-center justify-center rounded-full bg-danger px-5 py-3 font-semibold text-white transition-transform active:scale-[0.97] active:bg-danger-strong disabled:opacity-50;
+  }
+  .btn-danger-ghost {
+    @apply inline-flex min-h-[44px] w-full items-center justify-center rounded-full border border-danger/30 bg-danger/10 px-4 py-2 text-sm font-semibold text-danger transition active:bg-danger/20;
+  }
+  .bg-destructive-swipe {
+    @apply bg-danger active:bg-danger-strong;
   }
   .input {
     @apply w-full rounded-xl border border-hairline bg-surface-2 px-4 py-3 text-base text-fg-1 outline-none placeholder:text-fg-3 focus:border-brand-400;

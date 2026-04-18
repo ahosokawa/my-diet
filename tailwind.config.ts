@@ -25,6 +25,8 @@ const config: Config = {
         "fg-2": "rgb(var(--fg-2) / <alpha-value>)",
         "fg-3": "rgb(var(--fg-3) / <alpha-value>)",
         hairline: "rgb(var(--hairline) / <alpha-value>)",
+        danger: "rgb(var(--danger) / <alpha-value>)",
+        "danger-strong": "rgb(var(--danger-strong) / <alpha-value>)",
       },
       spacing: {
         "safe-top": "env(safe-area-inset-top)",
