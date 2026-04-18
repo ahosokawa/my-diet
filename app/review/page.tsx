@@ -329,6 +329,7 @@ export default function ReviewPage() {
           setOverrideKcal("");
         }}
         title="Custom calorie target"
+        detent="medium"
         footer={
           <div className="flex gap-2">
             <button

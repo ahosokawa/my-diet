@@ -14,7 +14,6 @@ import {
 } from "@/lib/db/repos";
 import type { ScheduleDay } from "@/lib/db/schema";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import { Sheet } from "@/components/ui/Sheet";
 import { Check, Dumbbell, ChevronDown, ChevronUp, Copy } from "@/components/ui/Icon";
 import { haptic } from "@/lib/ui/haptics";
 import { WEEKDAY_LABELS, defaultMealTimes, toMinutes } from "@/lib/schedule/week";
@@ -387,9 +386,13 @@ export default function IntakePage() {
                       >
                         <button
                           className="flex w-full items-center justify-between px-4 py-3 text-left active:bg-surface-3"
-                          onClick={() =>
-                            setEditingDay(isEditing ? null : sd.weekday)
-                          }
+                          onClick={() => {
+                            if (isEditing && copyFrom === sd.weekday) {
+                              setCopyFrom(null);
+                              setCopyTargets(new Set());
+                            }
+                            setEditingDay(isEditing ? null : sd.weekday);
+                          }}
                           aria-expanded={isEditing}
                         >
                           <span className="text-sm font-semibold">
@@ -424,7 +427,6 @@ export default function IntakePage() {
                                 <div>
                                   <label className="label">Meals</label>
                                   <SegmentedControl
-                                    size="sm"
                                     value={sd.mealTimes.length}
                                     onChange={(v) => setMealCount(sd.weekday, v)}
                                     options={[1, 2, 3, 4, 5, 6].map((n) => ({
@@ -496,15 +498,87 @@ export default function IntakePage() {
                                     </button>
                                   )}
                                 </div>
-                                <button
-                                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-3 py-2 text-xs font-medium text-fg-1 active:bg-hairline"
-                                  onClick={() => {
-                                    setCopyFrom(sd.weekday);
-                                    setCopyTargets(new Set());
-                                  }}
-                                >
-                                  <Copy className="h-3.5 w-3.5" /> Copy this day to…
-                                </button>
+                                {copyFrom === sd.weekday ? (
+                                  <div className="rounded-xl border border-hairline bg-surface-1 p-3">
+                                    <div className="mb-2 text-xs font-semibold text-fg-2">
+                                      Copy {WEEKDAY_LABELS[sd.weekday]} to…
+                                    </div>
+                                    <div className="space-y-1">
+                                      {schedule.map((other) => {
+                                        if (other.weekday === sd.weekday) return null;
+                                        const on = copyTargets.has(other.weekday);
+                                        return (
+                                          <button
+                                            key={other.weekday}
+                                            onClick={() => {
+                                              setCopyTargets((prev) => {
+                                                const n = new Set(prev);
+                                                if (n.has(other.weekday)) n.delete(other.weekday);
+                                                else n.add(other.weekday);
+                                                return n;
+                                              });
+                                            }}
+                                            className="flex w-full items-center justify-between rounded-lg px-2 py-2 active:bg-surface-3"
+                                          >
+                                            <span className="flex items-center gap-3">
+                                              <span
+                                                className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${
+                                                  on
+                                                    ? "bg-brand-500 text-white"
+                                                    : "bg-surface-3 text-fg-2"
+                                                }`}
+                                              >
+                                                {SHORT_LABELS[other.weekday]}
+                                              </span>
+                                              <span className="text-sm font-medium">
+                                                {WEEKDAY_LABELS[other.weekday]}
+                                              </span>
+                                            </span>
+                                            <span
+                                              className={`flex h-5 w-5 items-center justify-center rounded-md border ${
+                                                on
+                                                  ? "border-brand-500 bg-brand-500 text-white"
+                                                  : "border-hairline"
+                                              }`}
+                                            >
+                                              {on && (
+                                                <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                                              )}
+                                            </span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                    <div className="mt-3 flex gap-2">
+                                      <button
+                                        className="flex-1 rounded-lg bg-surface-3 py-2 text-xs font-semibold text-fg-2 active:bg-hairline"
+                                        onClick={() => {
+                                          setCopyFrom(null);
+                                          setCopyTargets(new Set());
+                                        }}
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        disabled={copyTargets.size === 0}
+                                        className="flex-1 rounded-lg bg-brand-500 py-2 text-xs font-semibold text-white active:bg-brand-600 disabled:opacity-50"
+                                        onClick={applyCopy}
+                                      >
+                                        Paste to {copyTargets.size}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-3 py-2 text-xs font-medium text-fg-1 active:bg-hairline"
+                                    onClick={() => {
+                                      setCopyFrom(sd.weekday);
+                                      setCopyTargets(new Set());
+                                    }}
+                                  >
+                                    <Copy className="h-3.5 w-3.5" /> Copy this day to…
+                                  </button>
+                                )}
                               </div>
                             </motion.div>
                           )}
@@ -651,79 +725,6 @@ export default function IntakePage() {
         </div>
       </div>
 
-      <Sheet
-        open={copyFrom !== null}
-        onClose={() => {
-          setCopyFrom(null);
-          setCopyTargets(new Set());
-        }}
-        title={copyFrom !== null ? `Copy ${WEEKDAY_LABELS[copyFrom]} to…` : ""}
-        footer={
-          <div className="flex gap-2">
-            <button
-              className="btn-secondary flex-1"
-              onClick={() => {
-                setCopyFrom(null);
-                setCopyTargets(new Set());
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              className="btn-primary flex-1"
-              disabled={copyTargets.size === 0}
-              onClick={applyCopy}
-            >
-              Paste to {copyTargets.size}
-            </button>
-          </div>
-        }
-      >
-        <div className="space-y-1">
-          {schedule.map((sd) => {
-            if (sd.weekday === copyFrom) return null;
-            const selected = copyTargets.has(sd.weekday);
-            return (
-              <button
-                key={sd.weekday}
-                onClick={() => {
-                  setCopyTargets((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(sd.weekday)) next.delete(sd.weekday);
-                    else next.add(sd.weekday);
-                    return next;
-                  });
-                }}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-3 active:bg-surface-3"
-              >
-                <span className="flex items-center gap-3">
-                  <span
-                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                      selected
-                        ? "bg-brand-500 text-white"
-                        : "bg-surface-3 text-fg-2"
-                    }`}
-                  >
-                    {SHORT_LABELS[sd.weekday]}
-                  </span>
-                  <span className="text-sm font-medium">
-                    {WEEKDAY_LABELS[sd.weekday]}
-                  </span>
-                </span>
-                <span
-                  className={`flex h-6 w-6 items-center justify-center rounded-md border ${
-                    selected
-                      ? "border-brand-500 bg-brand-500 text-white"
-                      : "border-hairline"
-                  }`}
-                >
-                  {selected && <Check className="h-4 w-4" strokeWidth={3} />}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </Sheet>
     </main>
   );
 }

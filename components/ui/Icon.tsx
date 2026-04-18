@@ -28,4 +28,5 @@ export {
   ExternalLink,
   Eye,
   EyeOff,
+  User,
 } from "lucide-react";

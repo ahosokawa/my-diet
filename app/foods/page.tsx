@@ -253,6 +253,7 @@ export default function FoodsPage() {
         open={showForm}
         onClose={() => setShowForm(false)}
         title="Add custom food"
+        detent="large"
         footer={
           <div className="flex gap-2">
             <button

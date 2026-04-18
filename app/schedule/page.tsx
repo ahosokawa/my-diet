@@ -124,7 +124,6 @@ export default function SchedulePage() {
                           <div>
                             <label className="label">Meals per day</label>
                             <SegmentedControl
-                              size="sm"
                               value={d.mealTimes.length}
                               onChange={(v) => setMealCount(d.weekday, v)}
                               options={[1, 2, 3, 4, 5, 6].map((n) => ({
@@ -237,6 +236,7 @@ export default function SchedulePage() {
         title={
           copyFrom !== null ? `Copy ${WEEKDAY_LABELS[copyFrom]} to…` : ""
         }
+        detent="medium"
         footer={
           <div className="flex gap-2">
             <button

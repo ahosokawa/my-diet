@@ -5,14 +5,19 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Header } from "@/components/Header";
 import { TabBar } from "@/components/TabBar";
 import { Toggle } from "@/components/ui/Toggle";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Sheet } from "@/components/ui/Sheet";
-import { Bell, Cloud, ExternalLink, Eye, EyeOff } from "@/components/ui/Icon";
+import { Bell, Cloud, ExternalLink, Eye, EyeOff, User } from "@/components/ui/Icon";
 import {
   DEFAULT_NOTIF_PREFS,
   getNotifPrefs,
+  getProfile,
   saveNotifPrefs,
+  saveProfile,
 } from "@/lib/db/repos";
-import type { NotifPrefs } from "@/lib/db/schema";
+import type { NotifPrefs, Profile } from "@/lib/db/schema";
+import type { ActivityLevel, Sex } from "@/lib/nutrition/mifflin";
+import { ACTIVITY_FACTORS } from "@/lib/nutrition/mifflin";
 import {
   getPermission,
   requestPermission,
@@ -26,6 +31,14 @@ import { flushBackupNow } from "@/lib/backup/scheduler";
 import { restoreFromGist } from "@/lib/backup/restore";
 
 const LEAD_OPTIONS = [0, 10, 20, 30, 45];
+
+const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
+  sedentary: "Sedentary",
+  light: "Light",
+  moderate: "Moderate",
+  active: "Active",
+  very_active: "Very active",
+};
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -49,17 +62,68 @@ export default function SettingsPage() {
   const [hasTrigger, setHasTrigger] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileDraft, setProfileDraft] = useState<{
+    sex: Sex;
+    age: number | "";
+    heightFt: number | "";
+    heightIn: number | "";
+    weightLb: number | "";
+    activity: ActivityLevel;
+  } | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
   const scrollRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     (async () => {
-      const p = await getNotifPrefs();
+      const [p, prof] = await Promise.all([getNotifPrefs(), getProfile()]);
       setPrefs(p);
+      if (prof) setProfile(prof);
       setLoaded(true);
       setPerm(getPermission());
       setHasTrigger(supportsTimestampTrigger());
     })();
   }, []);
+
+  function startEditProfile() {
+    if (!profile) return;
+    setProfileDraft({
+      sex: profile.sex,
+      age: profile.age,
+      heightFt: Math.floor(profile.heightIn / 12),
+      heightIn: profile.heightIn % 12,
+      weightLb: profile.weightLb,
+      activity: profile.activity,
+    });
+    setEditingProfile(true);
+  }
+
+  async function commitProfile() {
+    if (!profile || !profileDraft) return;
+    const { sex, age, heightFt, heightIn, weightLb, activity } = profileDraft;
+    if (
+      typeof age !== "number" ||
+      typeof heightFt !== "number" ||
+      typeof heightIn !== "number" ||
+      typeof weightLb !== "number"
+    )
+      return;
+    setSavingProfile(true);
+    const next: Profile = {
+      ...profile,
+      sex,
+      age,
+      heightIn: heightFt * 12 + heightIn,
+      weightLb,
+      activity,
+    };
+    await saveProfile(next);
+    setProfile(next);
+    setEditingProfile(false);
+    setProfileDraft(null);
+    setSavingProfile(false);
+  }
 
   async function save(next: NotifPrefs) {
     setSaving(true);
@@ -170,6 +234,172 @@ export default function SettingsPage() {
         <Header title="Settings" back="/today" scrollRef={scrollRef} />
 
         <div className="px-4 pb-4">
+          {profile && (
+            <>
+              <div className="card mb-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
+                    <User className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="font-semibold">Profile</h2>
+                    <p className="truncate text-xs text-fg-3">
+                      {profile.sex === "male" ? "Male" : "Female"} ·{" "}
+                      {profile.age}y · {Math.floor(profile.heightIn / 12)}'
+                      {profile.heightIn % 12}" · {profile.weightLb} lb ·{" "}
+                      {ACTIVITY_LABELS[profile.activity]}
+                    </p>
+                  </div>
+                  {!editingProfile && (
+                    <button
+                      className="rounded-full bg-surface-3 px-3 py-1.5 text-xs font-semibold text-fg-2 active:bg-hairline"
+                      onClick={startEditProfile}
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+                {editingProfile && profileDraft && (
+                  <div className="mt-4 space-y-3 border-t border-hairline pt-4">
+                    <div>
+                      <label className="label">Sex</label>
+                      <SegmentedControl
+                        value={profileDraft.sex}
+                        onChange={(v) =>
+                          setProfileDraft({ ...profileDraft, sex: v })
+                        }
+                        options={[
+                          { value: "male", label: "Male" },
+                          { value: "female", label: "Female" },
+                        ]}
+                        ariaLabel="Sex"
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Age</label>
+                      <input
+                        inputMode="numeric"
+                        className="input text-lg font-semibold tabular-nums"
+                        value={profileDraft.age}
+                        onChange={(e) =>
+                          setProfileDraft({
+                            ...profileDraft,
+                            age:
+                              e.target.value === ""
+                                ? ""
+                                : Number(e.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="flex-1">
+                        <label className="label">Feet</label>
+                        <input
+                          inputMode="numeric"
+                          className="input text-lg font-semibold tabular-nums"
+                          value={profileDraft.heightFt}
+                          onChange={(e) =>
+                            setProfileDraft({
+                              ...profileDraft,
+                              heightFt:
+                                e.target.value === ""
+                                  ? ""
+                                  : Number(e.target.value),
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="label">Inches</label>
+                        <input
+                          inputMode="numeric"
+                          className="input text-lg font-semibold tabular-nums"
+                          value={profileDraft.heightIn}
+                          onChange={(e) =>
+                            setProfileDraft({
+                              ...profileDraft,
+                              heightIn:
+                                e.target.value === ""
+                                  ? ""
+                                  : Number(e.target.value),
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label">Weight (lb)</label>
+                      <input
+                        inputMode="decimal"
+                        className="input text-lg font-semibold tabular-nums"
+                        value={profileDraft.weightLb}
+                        onChange={(e) =>
+                          setProfileDraft({
+                            ...profileDraft,
+                            weightLb:
+                              e.target.value === ""
+                                ? ""
+                                : Number(e.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Activity</label>
+                      <div className="space-y-1">
+                        {(Object.keys(ACTIVITY_FACTORS) as ActivityLevel[]).map(
+                          (k) => {
+                            const active = profileDraft.activity === k;
+                            return (
+                              <button
+                                key={k}
+                                onClick={() =>
+                                  setProfileDraft({ ...profileDraft, activity: k })
+                                }
+                                className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm ${
+                                  active
+                                    ? "bg-brand-50 font-semibold text-brand-700 dark:bg-brand-900/30 dark:text-brand-300"
+                                    : "text-fg-2"
+                                }`}
+                              >
+                                {ACTIVITY_LABELS[k]}
+                              </button>
+                            );
+                          }
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-fg-3">
+                      Editing here does not retroactively update calorie targets.
+                      To recompute targets, use the Weekly review.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        className="btn-secondary flex-1"
+                        onClick={() => {
+                          setEditingProfile(false);
+                          setProfileDraft(null);
+                        }}
+                        disabled={savingProfile}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn-primary flex-1"
+                        onClick={commitProfile}
+                        disabled={savingProfile}
+                      >
+                        {savingProfile ? "Saving…" : "Save"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </>
+          )}
+
           <div className="card mb-3">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
@@ -427,6 +657,7 @@ export default function SettingsPage() {
         open={restoreOpen}
         onClose={() => (restoring ? null : setRestoreOpen(false))}
         title="Restore from Gist"
+        detent="medium"
         footer={
           <div className="flex gap-2 pb-2">
             <button

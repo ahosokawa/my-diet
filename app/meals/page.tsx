@@ -7,7 +7,7 @@ import { MacroRow } from "@/components/MacroBar";
 import { GramsStepper } from "@/components/GramsStepper";
 import { Sheet } from "@/components/ui/Sheet";
 import { IconButton } from "@/components/ui/IconButton";
-import { Lock, LockOpen, X, Plus, Sparkles, Star, Search, Trash2, Copy } from "@/components/ui/Icon";
+import { Lock, LockOpen, X, Plus, Sparkles, Star, Search, Trash2, Copy, Check } from "@/components/ui/Icon";
 import { haptic } from "@/lib/ui/haptics";
 import {
   getCurrentTargets,
@@ -25,6 +25,7 @@ import { distributeMeals, type MealSlot } from "@/lib/nutrition/distribute";
 import { postWorkoutMealIndex } from "@/lib/schedule/week";
 import { solvePortions, macrosFor, type FoodMacros } from "@/lib/nutrition/solver";
 import { parseYmd, todayStr } from "@/lib/date";
+import { rankFoods } from "@/lib/ui/food-search";
 
 type Selection = { food: Food; grams: number; locked: boolean };
 
@@ -80,21 +81,24 @@ function MealDetail() {
   }, [date, mealIndex]);
 
   const filteredFoods = useMemo(() => {
-    const q = search.toLowerCase();
-    const base = q ? allFoods.filter((f) => f.name.toLowerCase().includes(q)) : allFoods;
-    return base.slice(0, 60);
+    const q = search.trim();
+    if (!q) return allFoods.slice(0, 60);
+    return rankFoods(allFoods, q);
   }, [allFoods, search]);
 
-  const addFood = useCallback(
-    (food: Food) => {
-      if (selected.some((s) => s.food.id === food.id)) return;
-      setSelected((prev) => [...prev, { food, grams: 100, locked: false }]);
-      haptic("light");
-      setShowPicker(false);
-      setSearch("");
-    },
+  const selectedIds = useMemo(
+    () => new Set(selected.map((s) => s.food.id)),
     [selected]
   );
+
+  const togglePickFood = useCallback((food: Food) => {
+    setSelected((prev) => {
+      const exists = prev.some((s) => s.food.id === food.id);
+      if (exists) return prev.filter((s) => s.food.id !== food.id);
+      return [...prev, { food, grams: 100, locked: false }];
+    });
+    haptic("light");
+  }, []);
 
   const removeFood = useCallback((foodId: number) => {
     setSelected((prev) => prev.filter((s) => s.food.id !== foodId));
@@ -251,24 +255,10 @@ function MealDetail() {
               {selected.map((s) => (
                 <div key={s.food.id} className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <IconButton
-                      label={s.locked ? "Unlock" : "Lock"}
-                      tone={s.locked ? "warning" : "neutral"}
-                      variant={s.locked ? "tinted" : "ghost"}
-                      onClick={() => toggleLock(s.food.id!)}
-                      title={s.locked ? "Locked — auto-balance will not change" : "Unlocked"}
-                    >
-                      {s.locked ? (
-                        <Lock className="h-[18px] w-[18px]" />
-                      ) : (
-                        <LockOpen className="h-[18px] w-[18px]" />
-                      )}
-                    </IconButton>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold">{s.food.name}</div>
                       <div className="truncate text-xs tabular-nums text-fg-3">
-                        {s.food.kcalPer100} kcal · {s.food.proteinPer100}P ·{" "}
-                        {s.food.fatPer100}F · {s.food.carbPer100}C
+                        {s.food.kcalPer100} kcal / 100{s.food.unit}
                       </div>
                     </div>
                     <IconButton
@@ -280,12 +270,35 @@ function MealDetail() {
                       <X className="h-[18px] w-[18px]" />
                     </IconButton>
                   </div>
-                  <div className="pl-12">
-                    <GramsStepper
-                      value={s.grams}
-                      onChange={(v) => setGrams(s.food.id!, v)}
-                      unit={s.food.unit}
-                    />
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <GramsStepper
+                        value={s.grams}
+                        onChange={(v) => setGrams(s.food.id!, v)}
+                        unit={s.food.unit}
+                      />
+                    </div>
+                    <button
+                      aria-pressed={s.locked}
+                      onClick={() => toggleLock(s.food.id!)}
+                      title={
+                        s.locked
+                          ? "Locked — auto-balance will not change"
+                          : "Tap to lock portion"
+                      }
+                      className={`inline-flex h-11 items-center gap-1 rounded-full px-3 text-xs font-semibold transition-colors ${
+                        s.locked
+                          ? "bg-amber-100 text-amber-700 active:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300"
+                          : "text-fg-3 active:bg-surface-3"
+                      }`}
+                    >
+                      {s.locked ? (
+                        <Lock className="h-4 w-4" />
+                      ) : (
+                        <LockOpen className="h-4 w-4" />
+                      )}
+                      {s.locked ? "Locked" : "Lock"}
+                    </button>
                   </div>
                 </div>
               ))}
@@ -338,12 +351,24 @@ function MealDetail() {
           setSearch("");
         }}
         title="Add food"
+        detent="large"
+        footer={
+          <button
+            className="btn-primary w-full"
+            onClick={() => {
+              setShowPicker(false);
+              setSearch("");
+            }}
+          >
+            Done{selected.length > 0 ? ` · ${selected.length} selected` : ""}
+          </button>
+        }
       >
         <div className="relative mb-3">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-3" />
           <input
             autoFocus
-            className="input pl-9 pr-9"
+            className="input pl-9 pr-11"
             placeholder="Search foods…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -352,41 +377,59 @@ function MealDetail() {
             <button
               aria-label="Clear search"
               onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-fg-3 active:bg-surface-3"
+              className="absolute right-1 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-fg-3 active:bg-surface-3"
             >
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
         <div className="space-y-1">
-          {filteredFoods.map((f) => (
-            <div
-              key={f.id}
-              className="flex items-center gap-1 rounded-xl active:bg-surface-3"
-            >
-              <IconButton
-                label={f.favorite ? "Unfavorite" : "Favorite"}
-                tone={f.favorite ? "warning" : "neutral"}
-                variant="ghost"
-                onClick={() => toggleFav(f.id!)}
+          {filteredFoods.map((f) => {
+            const picked = selectedIds.has(f.id!);
+            return (
+              <div
+                key={f.id}
+                className="flex items-center gap-1 rounded-xl active:bg-surface-3"
               >
-                <Star
-                  className="h-[18px] w-[18px]"
-                  fill={f.favorite ? "currentColor" : "none"}
-                />
-              </IconButton>
-              <button
-                className="min-w-0 flex-1 py-2 text-left"
-                onClick={() => addFood(f)}
-              >
-                <div className="truncate text-sm font-semibold">{f.name}</div>
-                <div className="truncate text-xs tabular-nums text-fg-3">
-                  {f.kcalPer100} kcal · {f.proteinPer100}P · {f.fatPer100}F ·{" "}
-                  {f.carbPer100}C / 100{f.unit}
-                </div>
-              </button>
-            </div>
-          ))}
+                <IconButton
+                  label={f.favorite ? "Unfavorite" : "Favorite"}
+                  tone={f.favorite ? "warning" : "neutral"}
+                  variant="ghost"
+                  onClick={() => toggleFav(f.id!)}
+                >
+                  <Star
+                    className="h-[18px] w-[18px]"
+                    fill={f.favorite ? "currentColor" : "none"}
+                  />
+                </IconButton>
+                <button
+                  className="min-w-0 flex-1 py-2 text-left"
+                  onClick={() => togglePickFood(f)}
+                  aria-pressed={picked}
+                >
+                  <div className="truncate text-sm font-semibold">{f.name}</div>
+                  <div className="truncate text-xs tabular-nums text-fg-3">
+                    {f.kcalPer100} kcal · {f.proteinPer100}P · {f.fatPer100}F ·{" "}
+                    {f.carbPer100}C / 100{f.unit}
+                  </div>
+                </button>
+                <span
+                  className={`mr-2 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors ${
+                    picked
+                      ? "bg-brand-500 text-white"
+                      : "border border-hairline text-fg-3"
+                  }`}
+                  aria-hidden
+                >
+                  {picked ? (
+                    <Check className="h-4 w-4" strokeWidth={3} />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+                </span>
+              </div>
+            );
+          })}
           {filteredFoods.length === 0 && (
             <p className="py-8 text-center text-sm text-fg-3">No foods found</p>
           )}
@@ -397,6 +440,7 @@ function MealDetail() {
         open={showCombos}
         onClose={() => setShowCombos(false)}
         title="Combos"
+        detent="large"
       >
         <div className="space-y-1">
           {combos.map((c) => (
@@ -430,6 +474,7 @@ function MealDetail() {
           setComboName("");
         }}
         title="Save as combo"
+        detent="medium"
         footer={
           <div className="flex gap-2">
             <button

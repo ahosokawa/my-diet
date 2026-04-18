@@ -3,15 +3,24 @@
 import { AnimatePresence, motion, type PanInfo } from "framer-motion";
 import { useEffect, type ReactNode } from "react";
 
+type Detent = "auto" | "medium" | "large";
+
 type Props = {
   open: boolean;
   onClose: () => void;
   title?: string;
   children: ReactNode;
   footer?: ReactNode;
+  detent?: Detent;
 };
 
-export function Sheet({ open, onClose, title, children, footer }: Props) {
+const DETENT_CLASS: Record<Detent, string> = {
+  auto: "max-h-[88dvh]",
+  medium: "h-[55dvh] max-h-[88dvh]",
+  large: "h-[88dvh]",
+};
+
+export function Sheet({ open, onClose, title, children, footer, detent = "large" }: Props) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -45,7 +54,7 @@ export function Sheet({ open, onClose, title, children, footer }: Props) {
             role="dialog"
             aria-modal="true"
             aria-label={title}
-            className="relative flex max-h-[88dvh] flex-col rounded-t-3xl bg-surface-2 shadow-[0_-8px_32px_rgba(0,0,0,0.18)]"
+            className={`relative flex ${DETENT_CLASS[detent]} flex-col rounded-t-3xl bg-surface-2 shadow-[0_-8px_32px_rgba(0,0,0,0.18)]`}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
