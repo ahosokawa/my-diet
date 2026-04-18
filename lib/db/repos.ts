@@ -120,12 +120,25 @@ export async function saveWholeSchedule(days: ScheduleDay[]): Promise<void> {
 }
 
 export async function logMeal(entry: Omit<MealLog, "id" | "loggedAt">): Promise<number> {
-  const id = await db.mealLogs.add({ ...entry, loggedAt: Date.now() });
+  const existing = await db.mealLogs
+    .where("[date+index]")
+    .equals([entry.date, entry.index])
+    .first();
+  const loggedAt = Date.now();
+  if (existing?.id != null) {
+    await db.mealLogs.update(existing.id, { ...entry, loggedAt });
+    return existing.id;
+  }
+  const id = await db.mealLogs.add({ ...entry, loggedAt });
   return id as number;
 }
 
 export async function getMealLogsForDate(date: string): Promise<MealLog[]> {
   return db.mealLogs.where("date").equals(date).sortBy("index");
+}
+
+export async function getMealLog(date: string, index: number): Promise<MealLog | undefined> {
+  return db.mealLogs.where("[date+index]").equals([date, index]).first();
 }
 
 export async function addWeight(w: Omit<WeightEntry, "id">): Promise<void> {

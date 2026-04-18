@@ -11,6 +11,7 @@ import { Lock, LockOpen, X, Plus, Sparkles, Star, Search, Trash2, Copy, Check } 
 import { haptic } from "@/lib/ui/haptics";
 import {
   getCurrentTargets,
+  getMealLog,
   getSchedule,
   listFoods,
   logMeal,
@@ -39,6 +40,7 @@ function MealDetail() {
   const [combos, setCombos] = useState<Combo[]>([]);
   const [target, setTarget] = useState<{ kcal: number; proteinG: number; fatG: number; carbG: number } | null>(null);
   const [selected, setSelected] = useState<Selection[]>([]);
+  const [alreadyLogged, setAlreadyLogged] = useState(false);
   const [search, setSearch] = useState("");
   const [showPicker, setShowPicker] = useState(false);
   const [showCombos, setShowCombos] = useState(false);
@@ -54,11 +56,12 @@ function MealDetail() {
 
   useEffect(() => {
     (async () => {
-      const [t, sched, foods, cs] = await Promise.all([
+      const [t, sched, foods, cs, log] = await Promise.all([
         getCurrentTargets(),
         getSchedule(),
         listFoods(),
         listCombos(),
+        getMealLog(date, mealIndex),
       ]);
       setAllFoods(foods);
       setCombos(cs);
@@ -77,6 +80,19 @@ function MealDetail() {
         slots
       );
       if (dist[mealIndex]) setTarget(dist[mealIndex]);
+
+      if (log && log.items.length > 0) {
+        const byId = new Map(foods.map((f) => [f.id!, f]));
+        const sel: Selection[] = log.items
+          .map((it) => {
+            const f = byId.get(it.foodId);
+            if (!f) return null;
+            return { food: f, grams: it.grams, locked: false };
+          })
+          .filter((s): s is Selection => s !== null);
+        setSelected(sel);
+        setAlreadyLogged(true);
+      }
     })();
   }, [date, mealIndex]);
 
@@ -339,7 +355,7 @@ function MealDetail() {
             disabled={saving}
             onClick={handleLog}
           >
-            {saving ? "Saving…" : "Log meal"}
+            {saving ? "Saving…" : alreadyLogged ? "Update meal" : "Log meal"}
           </button>
         )}
       </div>
