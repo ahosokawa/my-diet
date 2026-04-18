@@ -81,6 +81,20 @@ export type NotifPrefs = {
   reviewTime: string;
 };
 
+export type BackupState = {
+  id: "me";
+  patKey?: CryptoKey;
+  patCiphertext?: Uint8Array;
+  patIv?: Uint8Array;
+  patTailHint?: string;
+  gistId?: string;
+  autoEnabled: 0 | 1;
+  lastBackupAt?: number;
+  lastChangeAt?: number;
+  lastError?: string | null;
+  persistGranted?: 0 | 1 | 2;
+};
+
 class MyDietDb extends Dexie {
   profile!: Table<Profile, "me">;
   targets!: Table<Targets, number>;
@@ -90,6 +104,7 @@ class MyDietDb extends Dexie {
   weights!: Table<WeightEntry, number>;
   combos!: Table<Combo, number>;
   prefs!: Table<NotifPrefs, "me">;
+  backup!: Table<BackupState, "me">;
 
   constructor() {
     super("my-diet");
@@ -119,6 +134,9 @@ class MyDietDb extends Dexie {
     });
     this.version(4).stores({
       prefs: "id",
+    });
+    this.version(5).stores({
+      backup: "id",
     });
   }
 }
