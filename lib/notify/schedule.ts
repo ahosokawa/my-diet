@@ -1,4 +1,5 @@
 import type { NotifPrefs, ScheduleDay } from "../db/schema";
+import { formatYmd } from "../date";
 
 export type NotifKind = "meal" | "weighIn" | "review";
 
@@ -39,7 +40,7 @@ export function upcomingEvents({
     const day = byDay.get(weekday);
     if (!day) continue;
 
-    const ymd = ymdLocal(date);
+    const ymd = formatYmd(date);
 
     for (let i = 0; i < day.mealTimes.length; i++) {
       const fireAt = atTime(date, day.mealTimes[i]) - prefs.mealLeadMin * 60_000;
@@ -100,13 +101,6 @@ function addDays(d: Date, n: number): Date {
 function atTime(day: Date, hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
   return new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m).getTime();
-}
-
-function ymdLocal(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 function fmt12h(hhmm: string): string {

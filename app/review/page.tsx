@@ -12,28 +12,14 @@ import {
   getProfile,
   listWeights,
   saveTargets,
-  todayStr,
 } from "@/lib/db/repos";
 import type { Targets, WeightEntry } from "@/lib/db/schema";
 import { computeReview, type ReviewSuggestion } from "@/lib/review/engine";
 import { KCAL } from "@/lib/nutrition/macros";
-
-function parseDate(s: string): Date {
-  return new Date(s + "T12:00:00");
-}
-
-function shiftDate(s: string, days: number): string {
-  const d = parseDate(s);
-  d.setDate(d.getDate() + days);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+import { parseYmd, shiftDate, todayStr } from "@/lib/date";
 
 function nextMonday(fromStr: string): string {
-  const d = parseDate(fromStr);
-  const dow = d.getDay();
+  const dow = parseYmd(fromStr).getDay();
   const add = dow === 1 ? 7 : (8 - dow) % 7 || 7;
   return shiftDate(fromStr, add);
 }

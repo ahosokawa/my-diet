@@ -11,6 +11,10 @@ export async function getBackupState(): Promise<BackupState> {
   return row ?? DEFAULT;
 }
 
+export function readBackupRow(): Promise<BackupState | undefined> {
+  return db.backup.get("me");
+}
+
 export async function patchBackupState(patch: Partial<BackupState>): Promise<void> {
   const current = await getBackupState();
   await db.backup.put({ ...current, ...patch, id: "me" });

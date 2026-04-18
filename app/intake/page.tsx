@@ -18,6 +18,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Check, Dumbbell, ChevronDown, ChevronUp, Copy } from "@/components/ui/Icon";
 import { haptic } from "@/lib/ui/haptics";
 import { WEEKDAY_LABELS, defaultMealTimes, toMinutes } from "@/lib/schedule/week";
+import { minutesToHhmm } from "@/lib/date";
 
 type Draft = {
   sex: Sex;
@@ -55,12 +56,6 @@ const ACTIVITY_HINTS: Record<ActivityLevel, string> = {
 
 const SHORT_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 const TOTAL_STEPS = 7;
-
-function minutesToHhmm(min: number): string {
-  const h = String(Math.floor(min / 60) % 24).padStart(2, "0");
-  const m = String(min % 60).padStart(2, "0");
-  return `${h}:${m}`;
-}
 
 function makeDefaultSchedule(): ScheduleDay[] {
   return Array.from({ length: 7 }, (_, i) => ({
@@ -222,7 +217,6 @@ export default function IntakePage() {
 
   return (
     <main className="flex flex-1 flex-col">
-      {/* Top progress bar */}
       <div
         className="px-4"
         style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
@@ -627,7 +621,6 @@ export default function IntakePage() {
         </AnimatePresence>
       </div>
 
-      {/* Sticky bottom bar */}
       <div
         className="border-t border-hairline bg-surface-2/95 px-4 pt-3 backdrop-blur"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}

@@ -11,6 +11,7 @@ import { haptic } from "@/lib/ui/haptics";
 import { getSchedule, saveWholeSchedule } from "@/lib/db/repos";
 import type { ScheduleDay } from "@/lib/db/schema";
 import { WEEKDAY_LABELS, defaultMealTimes, copyTo, toMinutes } from "@/lib/schedule/week";
+import { minutesToHhmm } from "@/lib/date";
 
 const SHORT_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -297,10 +298,4 @@ export default function SchedulePage() {
       </Sheet>
     </>
   );
-}
-
-function minutesToHhmm(min: number): string {
-  const h = String(Math.floor(min / 60) % 24).padStart(2, "0");
-  const m = String(min % 60).padStart(2, "0");
-  return `${h}:${m}`;
 }

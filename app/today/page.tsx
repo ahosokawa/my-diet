@@ -16,11 +16,11 @@ import {
   getMealLogsForDate,
   hasPendingTargetChange,
   isReviewEligible,
-  todayStr,
 } from "@/lib/db/repos";
 import type { Targets, ScheduleDay, MealLog } from "@/lib/db/schema";
 import { distributeMeals, type MealSlot } from "@/lib/nutrition/distribute";
 import { postWorkoutMealIndex } from "@/lib/schedule/week";
+import { parseYmd, shiftDate, todayStr } from "@/lib/date";
 
 type MealCard = {
   index: number;
@@ -30,32 +30,16 @@ type MealCard = {
   logged?: MealLog;
 };
 
-function parseDate(s: string): Date {
-  return new Date(s + "T12:00:00");
-}
-
 function formatDate(s: string): string {
-  const d = parseDate(s);
   const today = todayStr();
   if (s === today) return "Today";
-  const yesterday = shiftDate(today, -1);
-  const tomorrow = shiftDate(today, 1);
-  if (s === yesterday) return "Yesterday";
-  if (s === tomorrow) return "Tomorrow";
-  return d.toLocaleDateString(undefined, {
+  if (s === shiftDate(today, -1)) return "Yesterday";
+  if (s === shiftDate(today, 1)) return "Tomorrow";
+  return parseYmd(s).toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
     day: "numeric",
   });
-}
-
-function shiftDate(s: string, days: number): string {
-  const d = parseDate(s);
-  d.setDate(d.getDate() + days);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 function TodayView() {
@@ -87,7 +71,7 @@ function TodayView() {
       }
       setTargets(t);
 
-      const weekday = parseDate(date).getDay();
+      const weekday = parseYmd(date).getDay();
       const day: ScheduleDay = sched[weekday] ?? sched[0];
       const pwIdx = postWorkoutMealIndex(day);
       const slots: MealSlot[] = day.mealTimes.map((time, i) => ({

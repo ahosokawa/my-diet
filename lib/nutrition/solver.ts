@@ -9,6 +9,8 @@
  * gradient descent on the quadratic — small N so a few hundred steps converge.
  */
 
+import { KCAL } from "./macros";
+
 export type FoodMacros = {
   proteinPer100: number;
   fatPer100: number;
@@ -27,7 +29,6 @@ export type SolverResult = {
 };
 
 const WEIGHTS = { protein: 3, fat: 1, carb: 2 };
-const KCAL = { protein: 4, fat: 9, carb: 4 };
 
 export function solvePortions(
   foods: FoodMacros[],
@@ -158,11 +159,6 @@ function sumProd(a: number[], b: number[]): number {
 function mean(a: number[]): number {
   if (a.length === 0) return 0;
   return a.reduce((x, y) => x + y, 0) / a.length;
-}
-function maxArr(a: number[]): number {
-  let m = 0;
-  for (const v of a) if (v > m) m = v;
-  return m;
 }
 function sq(x: number): number {
   return x * x;

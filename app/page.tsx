@@ -1,26 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { db } from "@/lib/db/schema";
+import { getProfile } from "@/lib/db/repos";
 
 export default function IndexPage() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const profile = await db.profile.toCollection().first();
+    getProfile().then((profile) => {
       router.replace(profile ? "/today" : "/intake");
-      setReady(true);
-    })();
+    });
   }, [router]);
 
   return (
     <main className="flex-1 overflow-y-auto p-6">
-      <div className="mt-20 text-center text-neutral-500">
-        {ready ? "Loading…" : "Starting…"}
-      </div>
+      <div className="mt-20 text-center text-neutral-500">Starting…</div>
     </main>
   );
 }

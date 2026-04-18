@@ -10,27 +10,22 @@ import { Bell, Cloud, ExternalLink, Eye, EyeOff } from "@/components/ui/Icon";
 import {
   DEFAULT_NOTIF_PREFS,
   getNotifPrefs,
-  getProfile,
-  getSchedule,
   saveNotifPrefs,
 } from "@/lib/db/repos";
-import { db, type NotifPrefs } from "@/lib/db/schema";
+import type { NotifPrefs } from "@/lib/db/schema";
 import {
   getPermission,
   requestPermission,
-  scheduleEvents,
-  clearAll,
   supportsNotifications,
   supportsTimestampTrigger,
   testNotification,
 } from "@/lib/notify/driver";
-import { upcomingEvents } from "@/lib/notify/schedule";
-import { clearPat, patchBackupState, setPat } from "@/lib/backup/state";
+import { rescheduleNotifications } from "@/lib/notify/reschedule";
+import { clearPat, patchBackupState, readBackupRow, setPat } from "@/lib/backup/state";
 import { flushBackupNow } from "@/lib/backup/scheduler";
 import { restoreFromGist } from "@/lib/backup/restore";
 
 const LEAD_OPTIONS = [0, 10, 20, 30, 45];
-const REVIEW_ELIGIBLE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -66,29 +61,11 @@ export default function SettingsPage() {
     })();
   }, []);
 
-  async function reschedule(next: NotifPrefs) {
-    if (!supportsNotifications() || Notification.permission !== "granted") return;
-    if (!next.enabled) {
-      await clearAll();
-      return;
-    }
-    const [schedule, profile] = await Promise.all([getSchedule(), getProfile()]);
-    const reviewEligibleAt = profile ? profile.createdAt + REVIEW_ELIGIBLE_AFTER_MS : undefined;
-    const events = upcomingEvents({
-      now: new Date(),
-      horizonDays: 7,
-      schedule,
-      prefs: next,
-      reviewEligibleAt,
-    });
-    await scheduleEvents(events);
-  }
-
   async function save(next: NotifPrefs) {
     setSaving(true);
     setPrefs(next);
     await saveNotifPrefs(next);
-    await reschedule(next);
+    await rescheduleNotifications(next);
     setSaving(false);
   }
 
@@ -121,8 +98,7 @@ export default function SettingsPage() {
     setStatus(ok ? "Test notification sent." : "Couldn't send test — check permission.");
   }
 
-  // ─── Backup ────────────────────────────────────────────────────────
-  const backup = useLiveQuery(() => db.backup.get("me"), [], undefined);
+  const backup = useLiveQuery(readBackupRow, [], undefined);
   const hasPat = !!backup?.patCiphertext;
   const [patInput, setPatInput] = useState("");
   const [patVisible, setPatVisible] = useState(false);
@@ -194,7 +170,6 @@ export default function SettingsPage() {
         <Header title="Settings" back="/today" scrollRef={scrollRef} />
 
         <div className="px-4 pb-4">
-          {/* Reminders header card */}
           <div className="card mb-3">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
@@ -228,7 +203,6 @@ export default function SettingsPage() {
             )}
           </div>
 
-          {/* Grouped list */}
           <h3 className="mx-2 mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-fg-3">
             Meals
           </h3>
@@ -318,7 +292,6 @@ export default function SettingsPage() {
             </p>
           )}
 
-          {/* ─── Data & backup ─── */}
           <div className="card mb-3 mt-8">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">

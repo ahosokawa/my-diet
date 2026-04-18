@@ -19,12 +19,12 @@ import {
   deleteCombo,
   toggleFavoriteFood,
   getFoodsByIds,
-  todayStr,
 } from "@/lib/db/repos";
 import type { Combo, Food, Targets } from "@/lib/db/schema";
 import { distributeMeals, type MealSlot } from "@/lib/nutrition/distribute";
 import { postWorkoutMealIndex } from "@/lib/schedule/week";
 import { solvePortions, macrosFor, type FoodMacros } from "@/lib/nutrition/solver";
+import { parseYmd, todayStr } from "@/lib/date";
 
 type Selection = { food: Food; grams: number; locked: boolean };
 
@@ -63,7 +63,7 @@ function MealDetail() {
       setCombos(cs);
       if (!t) return;
 
-      const weekday = new Date(date + "T12:00:00").getDay();
+      const weekday = parseYmd(date).getDay();
       const day = sched[weekday] ?? sched[0];
       const pwIdx = postWorkoutMealIndex(day);
       const slots: MealSlot[] = day.mealTimes.map((time, i) => ({
@@ -300,7 +300,6 @@ function MealDetail() {
         </div>
       </main>
 
-      {/* Bottom action bar */}
       <div
         className="border-t border-hairline bg-surface-2/95 px-4 pt-3 backdrop-blur"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}

@@ -1,5 +1,10 @@
 import { db, type Combo, type Food, type MealLog, type NotifPrefs, type Profile, type ScheduleDay, type Targets, type WeightEntry } from "./schema";
 import seedFoods from "./seed-foods.json";
+import { todayStr } from "@/lib/date";
+
+export { todayStr };
+
+export const REVIEW_ELIGIBLE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const DEFAULT_NOTIF_PREFS: NotifPrefs = {
   id: "me",
@@ -25,9 +30,13 @@ export async function saveProfile(p: Omit<Profile, "id" | "createdAt"> & { creat
 
 export async function getCurrentTargets(): Promise<Targets | undefined> {
   const today = todayStr();
-  const all = await db.targets.orderBy("dateEffective").toArray();
-  const active = all.filter((t) => t.dateEffective <= today).pop();
-  return active ?? all[0];
+  const active = await db.targets
+    .where("dateEffective")
+    .belowOrEqual(today)
+    .reverse()
+    .first();
+  if (active) return active;
+  return db.targets.orderBy("dateEffective").first();
 }
 
 export async function saveTargets(t: Omit<Targets, "id">): Promise<void> {
@@ -43,8 +52,7 @@ export async function hasPendingTargetChange(): Promise<boolean> {
 export async function isReviewEligible(): Promise<boolean> {
   const p = await getProfile();
   if (!p) return false;
-  const ageMs = Date.now() - p.createdAt;
-  return ageMs >= 7 * 24 * 60 * 60 * 1000;
+  return Date.now() - p.createdAt >= REVIEW_ELIGIBLE_AFTER_MS;
 }
 
 export async function listFoods(): Promise<Food[]> {
@@ -70,10 +78,6 @@ export async function addCustomFood(f: Omit<Food, "id" | "builtin" | "slug" | "f
   const slug = f.slug ?? `custom-${Date.now()}`;
   const id = await db.foods.add({ ...f, slug, builtin: 0, favorite: 0 });
   return id as number;
-}
-
-export async function updateFood(id: number, patch: Partial<Food>): Promise<void> {
-  await db.foods.update(id, patch);
 }
 
 export async function deleteFood(id: number): Promise<void> {
@@ -111,10 +115,6 @@ export async function getSchedule(): Promise<ScheduleDay[]> {
   return out;
 }
 
-export async function saveScheduleDay(day: ScheduleDay): Promise<void> {
-  await db.schedule.put(day);
-}
-
 export async function saveWholeSchedule(days: ScheduleDay[]): Promise<void> {
   await db.schedule.bulkPut(days);
 }
@@ -126,10 +126,6 @@ export async function logMeal(entry: Omit<MealLog, "id" | "loggedAt">): Promise<
 
 export async function getMealLogsForDate(date: string): Promise<MealLog[]> {
   return db.mealLogs.where("date").equals(date).sortBy("index");
-}
-
-export async function deleteMealLog(id: number): Promise<void> {
-  await db.mealLogs.delete(id);
 }
 
 export async function addWeight(w: Omit<WeightEntry, "id">): Promise<void> {
@@ -156,12 +152,4 @@ export async function getNotifPrefs(): Promise<NotifPrefs> {
 
 export async function saveNotifPrefs(p: Omit<NotifPrefs, "id">): Promise<void> {
   await db.prefs.put({ id: "me", ...p });
-}
-
-export function todayStr(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
