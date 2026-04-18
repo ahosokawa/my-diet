@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ComponentType, SVGProps } from "react";
-import { Home, BookOpen, CalendarDays, Scale, LineChart } from "@/components/ui/Icon";
+import { Home, CalendarDays, Scale, LineChart, SlidersHorizontal } from "@/components/ui/Icon";
 
 type Tab = {
   href: string;
@@ -13,10 +13,10 @@ type Tab = {
 
 const TABS: Tab[] = [
   { href: "/today", label: "Today", icon: Home },
-  { href: "/foods", label: "Foods", icon: BookOpen },
   { href: "/schedule", label: "Schedule", icon: CalendarDays },
   { href: "/weight", label: "Weight", icon: Scale },
   { href: "/review", label: "Review", icon: LineChart },
+  { href: "/settings", label: "Settings", icon: SlidersHorizontal },
 ];
 
 export function TabBar() {

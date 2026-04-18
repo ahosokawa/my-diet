@@ -9,6 +9,7 @@ export {
   ChevronDown,
   ChevronUp,
   Settings,
+  SlidersHorizontal,
   Search,
   X,
   Plus,

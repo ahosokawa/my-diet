@@ -54,7 +54,7 @@ Weekly Friday check-in math (v1.1). Takes current/previous week weights and curr
 - `app/page.tsx` routes first-launch users to `/intake`, otherwise `/today`.
 - `app/today/page.tsx` — daily view; accepts `?d=YYYY-MM-DD` for history/future navigation.
 - `app/meals/page.tsx` — meal detail + food picker + solver; identified by `?d=YYYY-MM-DD&i=<mealIndex>` query params (not a dynamic `[id]` segment). Wrap `useSearchParams` usage in `<Suspense>` — required for static export.
-- `app/intake`, `app/schedule`, `app/foods`, `app/weight`, `app/review` — one route each.
+- `app/intake`, `app/schedule`, `app/weight`, `app/review`, `app/settings` — one route each. Custom foods are created inline from the meal picker; there is no standalone `/foods` route.
 
 Shared UI lives in `components/` (Header, TabBar, MacroBar, GramsStepper).
 

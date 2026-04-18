@@ -216,7 +216,7 @@ export default function SettingsPage() {
     return (
       <>
         <main className="flex-1 overflow-y-auto p-4">
-          <Header title="Settings" back="/today" />
+          <Header title="Settings" />
           <p className="mt-12 text-center text-fg-3">Loading…</p>
         </main>
         <TabBar />
@@ -231,7 +231,7 @@ export default function SettingsPage() {
   return (
     <>
       <main ref={scrollRef} className="flex-1 overflow-y-auto">
-        <Header title="Settings" back="/today" scrollRef={scrollRef} />
+        <Header title="Settings" scrollRef={scrollRef} />
 
         <div className="px-4 pb-4">
           {profile && (

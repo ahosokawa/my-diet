@@ -9,7 +9,7 @@ import { MacroRow } from "@/components/MacroBar";
 import { TabBar } from "@/components/TabBar";
 import { IconButton } from "@/components/ui/IconButton";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { Settings, ChevronLeft, ChevronRight, Check, Dumbbell } from "@/components/ui/Icon";
+import { ChevronLeft, ChevronRight, Check, Dumbbell } from "@/components/ui/Icon";
 import {
   getCurrentTargets,
   getSchedule,
@@ -139,20 +139,10 @@ function TodayView() {
     else if (info.offset.x > threshold || info.velocity.x > 400) go(shiftDate(date, -1));
   }
 
-  const settingsBtn = (
-    <Link
-      href="/settings"
-      aria-label="Settings"
-      className="inline-flex h-11 w-11 items-center justify-center rounded-full text-fg-2 transition-transform active:scale-[0.92] active:bg-surface-3"
-    >
-      <Settings className="h-[22px] w-[22px]" strokeWidth={2} />
-    </Link>
-  );
-
   return (
     <>
       <main ref={scrollRef} className="relative flex-1 overflow-y-auto overflow-x-hidden">
-        <Header title={formatDate(date)} right={settingsBtn} scrollRef={scrollRef} />
+        <Header title={formatDate(date)} scrollRef={scrollRef} />
 
         <div className="px-4 pb-28 pt-2">
           <div className="mb-3 flex items-center justify-between">

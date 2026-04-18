@@ -8,8 +8,8 @@ An iOS-friendly PWA for tracking calories and macros. Local-first: all food and 
 - **Calorie review** — pick from three presets (slightly under / recommended / slightly over) or enter a custom calorie target during onboarding.
 - **Weekly schedule** — per-day meal times and workout window, with flexible copy-to-days. Workout days get an automatic post-workout recovery meal.
 - **Today view** — daily totals + per-meal cards. Navigate past and future days with prev/next arrows.
-- **Meal detail** — pick foods, lock specific portions, auto-balance the rest via least-squares solver to hit the meal's macro target.
-- **Food library** — ~130 curated foods plus custom food CRUD. Favorites pin to the top.
+- **Meal detail** — pick foods, lock specific portions, auto-balance the rest via least-squares solver to hit the meal's macro target. Create custom foods inline from the picker: enter serving size + per-serving macros, the app normalizes to per-100 behind the scenes.
+- **Food library** — ~130 curated seeded foods plus custom foods you create. Favorites pin to the top of the picker.
 - **Combos** — save a set of foods (with locks) and reload them into any meal; auto-balances on load.
 - **Weight log** — daily weight entry with a simple line chart.
 - **PWA** — installable to the home screen, works offline.
@@ -47,12 +47,13 @@ Open http://localhost:3000. First launch drops you into the intake wizard.
 
 ```
 app/                    Next.js App Router pages
-  intake/               Onboarding wizard
-  today/                Daily view (supports ?d=YYYY-MM-DD)
-  meals/[id]/           Meal detail + food picker + solver
-  foods/                Food library + custom food CRUD
-  schedule/             Weekly grid
-  weight/               Weight log + chart
+  intake/                Onboarding wizard
+  today/                 Daily view (supports ?d=YYYY-MM-DD)
+  meals/                 Meal detail + food picker + solver + inline custom-food creation (uses ?d= & ?i= query params)
+  schedule/              Weekly grid
+  weight/                Weight log + chart
+  review/                Weekly Friday check-in
+  settings/              Profile, reminders, backup/restore
 components/             Shared UI (Header, TabBar, MacroBar, GramsStepper, …)
 lib/
   db/                   Dexie schema + typed repos
@@ -90,7 +91,7 @@ Users can override the calorie target during onboarding; future overrides happen
 
 ## Status
 
-v1 core loop is code-complete: onboarding, schedule, today, meal detail + solver, food library, weight log, PWA shell.
+v1 core loop is code-complete: onboarding, schedule, today, meal detail + solver (with inline custom-food creation), weight log, PWA shell.
 
 v1.1 (next) adds iOS Web Push notifications (meal reminders, weigh-in, Friday review) and the Friday check-in UI that consumes `lib/review/engine.ts`.
 
