@@ -1,5 +1,8 @@
 import Dexie, { type Table } from "dexie";
 import type { ActivityLevel, Sex } from "../nutrition/mifflin";
+import type { Goal } from "../nutrition/macros";
+
+export type { Goal };
 
 export type Profile = {
   id: "me";
@@ -8,6 +11,8 @@ export type Profile = {
   heightIn: number;
   weightLb: number;
   activity: ActivityLevel;
+  goal: Goal;
+  goalStartDate: string; // YYYY-MM-DD — anchor for rate-band corridor & review baseline
   createdAt: number;
 };
 
@@ -18,6 +23,8 @@ export type Targets = {
   proteinG: number;
   fatG: number;
   carbG: number;
+  proteinPerLb: number;
+  fatPerLb: number;
   source: "auto" | "override";
 };
 
@@ -137,6 +144,20 @@ class MyDietDb extends Dexie {
     });
     this.version(5).stores({
       backup: "id",
+    });
+    this.version(6).upgrade(async (tx) => {
+      await tx.table("profile").toCollection().modify((p) => {
+        if (p.goal === undefined) p.goal = "maintain";
+        if (p.goalStartDate === undefined) {
+          p.goalStartDate = new Date(p.createdAt ?? Date.now())
+            .toISOString()
+            .slice(0, 10);
+        }
+      });
+      await tx.table("targets").toCollection().modify((t) => {
+        if (t.proteinPerLb === undefined) t.proteinPerLb = 1.0;
+        if (t.fatPerLb === undefined) t.fatPerLb = 0.45;
+      });
     });
   }
 }

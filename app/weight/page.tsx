@@ -6,11 +6,14 @@ import { TabBar } from "@/components/TabBar";
 import {
   addWeight,
   deleteWeight,
+  getProfile,
   listWeights,
   todayStr,
   updateWeight,
 } from "@/lib/db/repos";
-import type { WeightEntry } from "@/lib/db/schema";
+import type { Profile, WeightEntry } from "@/lib/db/schema";
+import { RATE_BANDS } from "@/lib/nutrition/macros";
+import { MAINTAIN_DRIFT } from "./WeightChart";
 import { haptic } from "@/lib/ui/haptics";
 import { SwipeRow } from "@/components/ui/SwipeRow";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -18,6 +21,7 @@ import { WeightChart } from "./WeightChart";
 
 export default function WeightPage() {
   const [entries, setEntries] = useState<WeightEntry[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -30,13 +34,24 @@ export default function WeightPage() {
   const scrollRef = useRef<HTMLElement>(null);
 
   async function load() {
-    setEntries(await listWeights());
+    const [ws, prof] = await Promise.all([listWeights(), getProfile()]);
+    setEntries(ws);
+    if (prof) setProfile(prof);
     setLoaded(true);
   }
 
   useEffect(() => {
     load();
   }, []);
+
+  const goalStartWeightLb = useMemo(() => {
+    if (!profile) return undefined;
+    // Earliest entry on or after goalStartDate → best anchor for the corridor.
+    const startAnchored = [...entries]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .find((e) => e.date >= profile.goalStartDate);
+    return startAnchored?.lbs ?? profile.weightLb;
+  }, [entries, profile]);
 
   useEffect(() => {
     if (editingId == null) return;
@@ -237,8 +252,22 @@ export default function WeightPage() {
 
           {entries.length > 1 && (
             <div className="card mb-4">
-              <h3 className="mb-3 font-semibold">Trend</h3>
-              <WeightChart entries={entries} />
+              <div className="mb-3 flex items-baseline justify-between">
+                <h3 className="font-semibold">Trend</h3>
+                {profile && (
+                  <span className="text-xs text-fg-3 tabular-nums">
+                    {profile.goal === "maintain"
+                      ? `±${(MAINTAIN_DRIFT * 100).toFixed(1)}% drift zone`
+                      : `${Math.abs(RATE_BANDS[profile.goal].min * 100).toFixed(1)}–${Math.abs(RATE_BANDS[profile.goal].max * 100).toFixed(1)}%/wk ${profile.goal === "cut" ? "loss" : "gain"} band`}
+                  </span>
+                )}
+              </div>
+              <WeightChart
+                entries={entries}
+                goal={profile?.goal}
+                goalStartDate={profile?.goalStartDate}
+                goalStartWeightLb={goalStartWeightLb}
+              />
             </div>
           )}
 

@@ -13,9 +13,9 @@ import {
   listWeights,
   saveTargets,
 } from "@/lib/db/repos";
-import type { Targets, WeightEntry } from "@/lib/db/schema";
+import type { Profile, Targets, WeightEntry } from "@/lib/db/schema";
 import { computeReview, type ReviewSuggestion } from "@/lib/review/engine";
-import { KCAL } from "@/lib/nutrition/macros";
+import { KCAL, RATE_BANDS } from "@/lib/nutrition/macros";
 import { parseYmd, shiftDate, todayStr } from "@/lib/date";
 
 function nextMonday(fromStr: string): string {
@@ -44,6 +44,32 @@ function splitWeights(
   return { current, previous };
 }
 
+function reviewCopy(
+  goal: "cut" | "maintain" | "bulk",
+  s: ReviewSuggestion
+): string {
+  const kcal = Math.abs(s.kcalDelta);
+  if (goal === "cut") {
+    if (s.rateFlag === "in_band") return "On track. Keep current targets.";
+    if (s.rateFlag === "too_slow")
+      return `Losing too slowly. Drop ${kcal} kcal (mostly carbs).`;
+    if (s.rateFlag === "too_fast")
+      return `Losing too fast — ease up. Add ${kcal} kcal to protect lean mass.`;
+  }
+  if (goal === "bulk") {
+    if (s.rateFlag === "in_band") return "On track. Keep current targets.";
+    if (s.rateFlag === "too_slow")
+      return `Gaining too slowly. Add ${kcal} kcal (mostly carbs).`;
+    if (s.rateFlag === "too_fast")
+      return `Gaining too fast. Trim ${kcal} kcal to limit fat gain.`;
+  }
+  // maintain
+  if (s.verdict === "maintain") return "Weight is stable. Keep current targets.";
+  if (s.verdict === "decrease")
+    return `Trending up. Drop ${kcal} kcal (mostly carbs).`;
+  return `Trending down. Add ${kcal} kcal (mostly carbs).`;
+}
+
 function targetsFromKcal(
   current: Targets,
   newKcal: number
@@ -62,6 +88,7 @@ export default function ReviewPage() {
   const router = useRouter();
   const scrollRef = useRef<HTMLElement>(null);
   const [targets, setTargets] = useState<Targets | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [weights, setWeights] = useState<WeightEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [daysUntilEligible, setDaysUntilEligible] = useState(0);
@@ -79,6 +106,7 @@ export default function ReviewPage() {
       if (t) setTargets(t);
       setWeights(w);
       if (p) {
+        setProfile(p);
         const daysSince = (Date.now() - p.createdAt) / (24 * 60 * 60 * 1000);
         setDaysUntilEligible(Math.max(0, Math.ceil(7 - daysSince)));
       }
@@ -95,7 +123,8 @@ export default function ReviewPage() {
   );
 
   const suggestion: ReviewSuggestion | null = useMemo(() => {
-    if (!targets || current.length === 0 || previous.length === 0) return null;
+    if (!targets || !profile || current.length === 0 || previous.length === 0)
+      return null;
     return computeReview({
       currentWeek: current,
       previousWeek: previous,
@@ -105,8 +134,9 @@ export default function ReviewPage() {
         fatG: targets.fatG,
         carbG: targets.carbG,
       },
+      goal: profile.goal,
     });
-  }, [targets, current, previous]);
+  }, [targets, profile, current, previous]);
 
   async function apply(kcal: number, source: Targets["source"]) {
     if (!targets) return;
@@ -118,6 +148,8 @@ export default function ReviewPage() {
       proteinG: t.proteinG,
       fatG: t.fatG,
       carbG: t.carbG,
+      proteinPerLb: targets.proteinPerLb,
+      fatPerLb: targets.fatPerLb,
       source,
     });
     haptic("success");
@@ -232,11 +264,7 @@ export default function ReviewPage() {
                 </div>
                 <h2 className="text-2xl font-bold">{verdictMeta.label}</h2>
                 <p className="mt-1 text-sm opacity-90">
-                  {suggestion.verdict === "maintain"
-                    ? "Weight is stable. Keep current targets."
-                    : suggestion.verdict === "decrease"
-                    ? `Trending up. Drop ${Math.abs(suggestion.kcalDelta)} kcal (mostly carbs).`
-                    : `Trending down. Add ${suggestion.kcalDelta} kcal (mostly carbs).`}
+                  {reviewCopy(profile?.goal ?? "maintain", suggestion)}
                 </p>
               </div>
             </div>
@@ -272,6 +300,14 @@ export default function ReviewPage() {
                 {deltaPctDisplay}%
               </span>
             </div>
+            {profile && profile.goal !== "maintain" && (
+              <div className="mt-1 text-xs text-fg-3 tabular-nums">
+                Healthy{" "}
+                {profile.goal === "cut" ? "loss" : "gain"} band:{" "}
+                {Math.abs(RATE_BANDS[profile.goal].min * 100).toFixed(1)}–
+                {Math.abs(RATE_BANDS[profile.goal].max * 100).toFixed(1)}%/wk
+              </div>
+            )}
           </div>
 
           <div className="card mb-4">

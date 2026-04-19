@@ -32,7 +32,7 @@ export async function restoreFromGist(): Promise<RestoreResult> {
   const vc = checkVersion(parsed.env.schemaVersion);
   if (!vc.ok) return { ok: false, reason: vc.reason };
 
-  const t = parsed.env.tables;
+  const t = migrateTables(parsed.env.tables, parsed.env.schemaVersion);
   const dataTables = [
     db.profile,
     db.targets,
@@ -59,4 +59,27 @@ export async function restoreFromGist(): Promise<RestoreResult> {
   });
 
   return { ok: true, backupVersion: parsed.env.schemaVersion, exportedAt: parsed.env.exportedAt };
+}
+
+function migrateTables(
+  tables: EnvelopeTables,
+  fromVersion: number
+): EnvelopeTables {
+  if (fromVersion >= 6) return tables;
+  // v5 → v6: goal/goalStartDate on profile, proteinPerLb/fatPerLb on targets
+  return {
+    ...tables,
+    profile: tables.profile.map((p) => ({
+      ...p,
+      goal: p.goal ?? "maintain",
+      goalStartDate:
+        p.goalStartDate ??
+        new Date(p.createdAt ?? Date.now()).toISOString().slice(0, 10),
+    })),
+    targets: tables.targets.map((t) => ({
+      ...t,
+      proteinPerLb: t.proteinPerLb ?? 1.0,
+      fatPerLb: t.fatPerLb ?? 0.45,
+    })),
+  };
 }

@@ -30,4 +30,5 @@ export {
   Eye,
   EyeOff,
   User,
+  Target,
 } from "lucide-react";

@@ -9,7 +9,7 @@ import type {
   WeightEntry,
 } from "@/lib/db/schema";
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 export const BACKUP_FILENAME = "my-diet-backup.json";
 
 export type EnvelopeTables = {

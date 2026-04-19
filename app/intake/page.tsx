@@ -4,7 +4,13 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ACTIVITY_FACTORS, type ActivityLevel, type Sex, tdee } from "@/lib/nutrition/mifflin";
-import { macrosFromKcal } from "@/lib/nutrition/macros";
+import {
+  DEFAULT_FAT_PER_LB,
+  DEFAULT_PROTEIN_PER_LB,
+  kcalForGoal,
+  macrosFromKcal,
+  type Goal,
+} from "@/lib/nutrition/macros";
 import {
   saveProfile,
   saveTargets,
@@ -26,6 +32,7 @@ type Draft = {
   heightIn: number | "";
   weightLb: number | "";
   activity: ActivityLevel;
+  goal: Goal;
 };
 
 const INITIAL: Draft = {
@@ -35,6 +42,19 @@ const INITIAL: Draft = {
   heightIn: "",
   weightLb: "",
   activity: "moderate",
+  goal: "maintain",
+};
+
+const GOAL_LABELS: Record<Goal, string> = {
+  cut: "Lose fat",
+  maintain: "Maintain",
+  bulk: "Gain muscle",
+};
+
+const GOAL_HINTS: Record<Goal, string> = {
+  cut: "0.5–1%/wk loss",
+  maintain: "Hold current weight",
+  bulk: "0.25–0.5%/wk gain",
 };
 
 const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
@@ -54,7 +74,7 @@ const ACTIVITY_HINTS: Record<ActivityLevel, string> = {
 };
 
 const SHORT_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 8;
 
 function makeDefaultSchedule(): ScheduleDay[] {
   return Array.from({ length: 7 }, (_, i) => ({
@@ -69,6 +89,7 @@ const STEP_TITLES = [
   "How tall are you?",
   "Current weight?",
   "Activity level",
+  "What's your goal?",
   "Weekly schedule",
   "Daily calorie target",
 ];
@@ -84,6 +105,9 @@ export default function IntakePage() {
   const [calChoice, setCalChoice] = useState<"low" | "rec" | "high" | "custom">("rec");
   const [customKcal, setCustomKcal] = useState<number | "">("");
   const [submitting, setSubmitting] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [proteinPerLb, setProteinPerLb] = useState<number>(DEFAULT_PROTEIN_PER_LB);
+  const [fatPerLb, setFatPerLb] = useState<number>(DEFAULT_FAT_PER_LB);
 
   const computedKcal = useMemo(() => {
     if (
@@ -104,14 +128,19 @@ export default function IntakePage() {
     );
   }, [d]);
 
+  const goalKcal = useMemo(() => {
+    if (!computedKcal || typeof d.weightLb !== "number") return null;
+    return kcalForGoal({ tdee: computedKcal, weightLb: d.weightLb, goal: d.goal });
+  }, [computedKcal, d.weightLb, d.goal]);
+
   const kcalOptions = useMemo(() => {
-    if (!computedKcal) return null;
+    if (!goalKcal) return null;
     return {
-      low: computedKcal - 200,
-      rec: computedKcal,
-      high: computedKcal + 200,
+      low: goalKcal - 200,
+      rec: goalKcal,
+      high: goalKcal + 200,
     };
-  }, [computedKcal]);
+  }, [goalKcal]);
 
   const finalKcal = useMemo(() => {
     if (!kcalOptions) return 0;
@@ -121,8 +150,13 @@ export default function IntakePage() {
 
   const finalMacros = useMemo(() => {
     if (!finalKcal || typeof d.weightLb !== "number") return null;
-    return macrosFromKcal({ kcal: finalKcal, weightLb: d.weightLb });
-  }, [finalKcal, d.weightLb]);
+    return macrosFromKcal({
+      kcal: finalKcal,
+      weightLb: d.weightLb,
+      proteinPerLb,
+      fatPerLb,
+    });
+  }, [finalKcal, d.weightLb, proteinPerLb, fatPerLb]);
 
   const canContinue = (() => {
     if (step === 0) return true;
@@ -138,7 +172,8 @@ export default function IntakePage() {
     if (step === 3) return typeof d.weightLb === "number" && d.weightLb > 40;
     if (step === 4) return true;
     if (step === 5) return true;
-    if (step === 6)
+    if (step === 6) return true;
+    if (step === 7)
       return calChoice !== "custom" || (typeof customKcal === "number" && customKcal > 0);
     return true;
   })();
@@ -199,6 +234,8 @@ export default function IntakePage() {
       heightIn,
       weightLb: d.weightLb,
       activity: d.activity,
+      goal: d.goal,
+      goalStartDate: todayStr(),
     });
     await saveTargets({
       dateEffective: todayStr(),
@@ -206,6 +243,8 @@ export default function IntakePage() {
       proteinG: finalMacros.proteinG,
       fatG: finalMacros.fatG,
       carbG: finalMacros.carbG,
+      proteinPerLb,
+      fatPerLb,
       source: calChoice === "rec" ? "auto" : "override",
     });
     await saveWholeSchedule(schedule);
@@ -372,6 +411,42 @@ export default function IntakePage() {
             )}
 
             {step === 5 && (
+              <div className="space-y-2">
+                <p className="mb-2 text-sm text-fg-2">
+                  We'll adjust your starting calories to match.
+                </p>
+                {(["cut", "maintain", "bulk"] as Goal[]).map((g) => {
+                  const active = d.goal === g;
+                  return (
+                    <button
+                      key={g}
+                      onClick={() => setD({ ...d, goal: g })}
+                      className={`flex w-full items-center justify-between rounded-2xl border-2 px-4 py-3 text-left transition-colors ${
+                        active
+                          ? "border-brand-500 bg-brand-50 dark:bg-brand-900/30"
+                          : "border-hairline bg-surface-2"
+                      }`}
+                    >
+                      <div>
+                        <div
+                          className={`text-base font-semibold ${active ? "text-brand-700 dark:text-brand-300" : "text-fg-1"}`}
+                        >
+                          {GOAL_LABELS[g]}
+                        </div>
+                        <div className="text-xs text-fg-3">{GOAL_HINTS[g]}</div>
+                      </div>
+                      {active && (
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-500 text-white">
+                          <Check className="h-4 w-4" strokeWidth={3} />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {step === 6 && (
               <>
                 <p className="mb-4 text-sm text-fg-2">
                   Set meals per day and workout times. Tap a day to edit, then copy to similar days.
@@ -590,12 +665,16 @@ export default function IntakePage() {
               </>
             )}
 
-            {step === 6 && kcalOptions && (
+            {step === 7 && kcalOptions && (
               <>
                 <p className="mb-4 text-sm text-fg-2">
                   Based on your info, we recommend{" "}
-                  <strong className="text-fg-1">{kcalOptions.rec} kcal</strong> to
-                  maintain weight.
+                  <strong className="text-fg-1">{kcalOptions.rec} kcal</strong>{" "}
+                  {d.goal === "cut"
+                    ? "to lose fat at a healthy rate."
+                    : d.goal === "bulk"
+                    ? "to gain weight at a lean-bulk pace."
+                    : "to maintain weight."}
                 </p>
                 <div className="space-y-2">
                   {(
@@ -689,6 +768,74 @@ export default function IntakePage() {
                     </div>
                   </div>
                 )}
+
+                <button
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  className="mt-4 flex w-full items-center justify-between rounded-2xl border border-hairline bg-surface-2 px-4 py-3 text-left"
+                  aria-expanded={showAdvanced}
+                >
+                  <span className="text-sm font-semibold text-fg-1">Advanced</span>
+                  <span className="flex items-center gap-2 text-xs text-fg-3">
+                    <span className="tabular-nums">
+                      {proteinPerLb.toFixed(2)} P · {fatPerLb.toFixed(2)} F /lb
+                    </span>
+                    {showAdvanced ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </span>
+                </button>
+                <AnimatePresence initial={false}>
+                  {showAdvanced && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.18 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-2 space-y-3 rounded-2xl border border-hairline bg-surface-2 p-4">
+                        <p className="text-xs text-fg-3">
+                          Grams per pound of bodyweight. Carbs fill remaining kcal.
+                        </p>
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <label className="label">Protein g/lb</label>
+                            <input
+                              inputMode="decimal"
+                              className="input text-lg font-semibold tabular-nums"
+                              value={proteinPerLb}
+                              onChange={(e) =>
+                                setProteinPerLb(Number(e.target.value) || 0)
+                              }
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="label">Fat g/lb</label>
+                            <input
+                              inputMode="decimal"
+                              className="input text-lg font-semibold tabular-nums"
+                              value={fatPerLb}
+                              onChange={(e) =>
+                                setFatPerLb(Number(e.target.value) || 0)
+                              }
+                            />
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setProteinPerLb(DEFAULT_PROTEIN_PER_LB);
+                            setFatPerLb(DEFAULT_FAT_PER_LB);
+                          }}
+                          className="text-xs font-medium text-brand-600 dark:text-brand-400"
+                        >
+                          Reset to defaults
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </>
             )}
           </motion.div>

@@ -89,20 +89,6 @@ Everything is local IndexedDB (`Dexie`):
 
 Users can override the calorie target during onboarding; future overrides happen via the Friday review (v1.1).
 
-## Status
-
-v1 core loop is code-complete: onboarding, schedule, today, meal detail + solver (with inline custom-food creation), weight log, PWA shell.
-
-v1.1 (next) adds iOS Web Push notifications (meal reminders, weigh-in, Friday review) and the Friday check-in UI that consumes `lib/review/engine.ts`.
-
-## Out of scope for v1
-
-- Cut / bulk modes (maintenance only)
-- Barcode scanning / USDA lookup
-- Multi-device sync / accounts
-- Household units (cups, tbsp, oz)
-- Dark mode
-
 ## Credits
 
 Built by Andrew Hosokawa with help from Claude.
