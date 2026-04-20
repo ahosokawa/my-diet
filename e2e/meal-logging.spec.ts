@@ -19,7 +19,7 @@ test.describe("Meal logging", () => {
 
     await page.getByRole("button", { name: /Add food/ }).click();
     const picker = page.getByRole("dialog", { name: "Add food" });
-    await picker.getByPlaceholder("Search foods…").fill("chicken breast");
+    await picker.getByPlaceholder("Search foods…").fill("chicken breast cooked");
     await picker
       .getByRole("button", { name: /^Chicken breast \(cooked\)/ })
       .first()

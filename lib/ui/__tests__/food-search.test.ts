@@ -29,6 +29,14 @@ describe("scoreFood", () => {
   it("treats hyphenated tokens as separate words", () => {
     expect(scoreFood("sun-dried tomato", "dried")).toBe(2);
   });
+
+  it("matches multi-word queries across punctuation", () => {
+    expect(scoreFood("Chicken breast (cooked)", "chicken breast cooked")).toBeGreaterThan(0);
+  });
+
+  it("returns 0 when any token fails to match", () => {
+    expect(scoreFood("Chicken breast", "chicken salmon")).toBe(0);
+  });
 });
 
 describe("rankFoods", () => {

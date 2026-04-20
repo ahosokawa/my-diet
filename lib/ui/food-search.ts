@@ -6,12 +6,20 @@ export type Rankable = {
 export function scoreFood(name: string, query: string): number {
   if (!query) return 0;
   const n = name.toLowerCase();
-  const q = query.toLowerCase();
-  if (n.startsWith(q)) return 3;
-  for (const word of n.split(/[\s,/()-]+/)) {
-    if (word && word.startsWith(q)) return 2;
+  const words = n.split(/[\s,/()-]+/).filter(Boolean);
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return 0;
+
+  let total = 0;
+  for (const t of tokens) {
+    let best = 0;
+    if (n.startsWith(t)) best = 3;
+    else if (words.some((w) => w.startsWith(t))) best = 2;
+    else if (n.includes(t)) best = 1;
+    if (best === 0) return 0;
+    total += best;
   }
-  return n.includes(q) ? 1 : 0;
+  return total;
 }
 
 export function rankFoods<T extends Rankable>(foods: T[], query: string): T[] {
