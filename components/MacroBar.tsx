@@ -11,7 +11,11 @@ export function MacroBar({
 }) {
   const pct = target > 0 ? Math.min(100, (current / target) * 100) : 0;
   return (
-    <div>
+    <div
+      data-macro={label.toLowerCase()}
+      data-current={Math.round(current)}
+      data-target={Math.round(target)}
+    >
       <div className="mb-1 flex justify-between text-xs font-medium text-fg-2">
         <span>{label}</span>
         <span>
@@ -36,7 +40,12 @@ export function MacroRow({
   current: { proteinG: number; fatG: number; carbG: number; kcal: number };
 }) {
   return (
-    <div className="space-y-2.5">
+    <div
+      className="space-y-2.5"
+      data-macro-row
+      data-kcal-current={Math.round(current.kcal)}
+      data-kcal-target={target.kcal}
+    >
       <div className="flex items-baseline justify-between">
         <span className="text-sm font-medium text-fg-2">kcal</span>
         <span className="text-lg font-semibold tabular-nums">

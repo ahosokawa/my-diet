@@ -49,6 +49,7 @@ export function LargeTitle({ title, back, backLabel = "Back", right, scrollRef }
           ) : null}
         </div>
         <h1
+          aria-hidden={!collapsed}
           className={`flex-1 truncate text-center font-semibold transition-all ${
             collapsed ? "text-base opacity-100" : "text-base opacity-0"
           }`}
@@ -58,6 +59,7 @@ export function LargeTitle({ title, back, backLabel = "Back", right, scrollRef }
         <div className="flex min-w-[44px] items-center justify-end">{right ?? null}</div>
       </div>
       <h1
+        aria-hidden={collapsed}
         className={`px-4 pb-3 pt-2 text-3xl font-bold tracking-tight transition-all ${
           collapsed ? "h-0 -translate-y-2 overflow-hidden p-0 opacity-0" : "h-auto opacity-100"
         }`}

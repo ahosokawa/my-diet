@@ -206,7 +206,10 @@ export default function WeightPage() {
                   Today
                 </div>
                 <div className="mt-1 flex items-baseline gap-2">
-                  <span className="text-4xl font-bold tabular-nums text-fg-1">
+                  <span
+                    aria-label="Today's weight"
+                    className="text-4xl font-bold tabular-nums text-fg-1"
+                  >
                     {todaysEntry.lbs}
                   </span>
                   <span className="text-base text-fg-3">lbs</span>
@@ -230,6 +233,7 @@ export default function WeightPage() {
                 <input
                   inputMode="decimal"
                   pattern="[0-9]*\.?[0-9]*"
+                  aria-label="Weight pounds"
                   className="input flex-1 text-2xl font-semibold tabular-nums"
                   placeholder="0.0"
                   value={value}

@@ -8,9 +8,14 @@ export default function IndexPage() {
   const router = useRouter();
 
   useEffect(() => {
+    let cancelled = false;
     getProfile().then((profile) => {
+      if (cancelled) return;
       router.replace(profile ? "/today" : "/intake");
     });
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   return (

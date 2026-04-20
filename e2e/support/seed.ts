@@ -51,4 +51,14 @@ export async function seedEnvelope(page: Page, tables: EnvelopeTables): Promise<
     },
     { tables: tables as unknown as Record<string, unknown[]>, storeNames: STORES }
   );
+
+  // The root IndexPage fires router.replace() based on profile presence. Wait
+  // for that redirect to land so the test's subsequent goto() isn't racing
+  // an in-flight navigation from IndexPage.
+  await page
+    .waitForFunction(() => window.location.pathname !== "/", null, { timeout: 5000 })
+    .catch(() => {});
+  // Extra settle: give any Strict-Mode double-invoke or Fast-Refresh reload
+  // a chance to complete before the test starts navigating.
+  await page.waitForLoadState("networkidle").catch(() => {});
 }

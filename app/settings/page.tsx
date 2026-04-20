@@ -350,6 +350,7 @@ export default function SettingsPage() {
                   </div>
                   {!editingProfile && (
                     <button
+                      aria-label="Edit profile"
                       className="rounded-full bg-surface-3 px-3 py-1.5 text-xs font-semibold text-fg-2 active:bg-hairline"
                       onClick={startEditProfile}
                     >
@@ -377,6 +378,7 @@ export default function SettingsPage() {
                       <label className="label">Age</label>
                       <input
                         inputMode="numeric"
+                        aria-label="Age"
                         className="input text-lg font-semibold tabular-nums"
                         value={profileDraft.age}
                         onChange={(e) =>
@@ -395,6 +397,7 @@ export default function SettingsPage() {
                         <label className="label">Feet</label>
                         <input
                           inputMode="numeric"
+                          aria-label="Feet"
                           className="input text-lg font-semibold tabular-nums"
                           value={profileDraft.heightFt}
                           onChange={(e) =>
@@ -412,6 +415,7 @@ export default function SettingsPage() {
                         <label className="label">Inches</label>
                         <input
                           inputMode="numeric"
+                          aria-label="Inches"
                           className="input text-lg font-semibold tabular-nums"
                           value={profileDraft.heightIn}
                           onChange={(e) =>
@@ -430,6 +434,7 @@ export default function SettingsPage() {
                       <label className="label">Weight (lb)</label>
                       <input
                         inputMode="decimal"
+                        aria-label="Weight pounds"
                         className="input text-lg font-semibold tabular-nums"
                         value={profileDraft.weightLb}
                         onChange={(e) =>
@@ -485,6 +490,7 @@ export default function SettingsPage() {
                       </button>
                       <button
                         className="btn-primary flex-1"
+                        aria-label="Save profile"
                         onClick={commitProfile}
                         disabled={savingProfile}
                       >
@@ -513,6 +519,7 @@ export default function SettingsPage() {
                 </div>
                 {!editingGoal && (
                   <button
+                    aria-label="Edit goal"
                     className="rounded-full bg-surface-3 px-3 py-1.5 text-xs font-semibold text-fg-2 active:bg-hairline"
                     onClick={startEditGoal}
                   >
@@ -548,6 +555,7 @@ export default function SettingsPage() {
                       <label className="label">Protein g/lb</label>
                       <input
                         inputMode="decimal"
+                        aria-label="Protein per lb"
                         className="input text-lg font-semibold tabular-nums"
                         value={goalDraft.proteinPerLb}
                         onChange={(e) =>
@@ -562,6 +570,7 @@ export default function SettingsPage() {
                       <label className="label">Fat g/lb</label>
                       <input
                         inputMode="decimal"
+                        aria-label="Fat per lb"
                         className="input text-lg font-semibold tabular-nums"
                         value={goalDraft.fatPerLb}
                         onChange={(e) =>
@@ -602,6 +611,7 @@ export default function SettingsPage() {
                     </button>
                     <button
                       className="btn-primary flex-1"
+                      aria-label="Save goal"
                       onClick={commitGoal}
                       disabled={savingGoal}
                     >

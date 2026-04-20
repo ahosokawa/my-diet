@@ -9,7 +9,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  retries: 0,
+  globalSetup: "./e2e/support/global-setup.ts",
   reporter: process.env.CI
     ? [["html", { open: "never" }], ["list"]]
     : [["list"]],
@@ -24,6 +25,12 @@ export default defineConfig({
       name: "mobile-chromium",
       use: {
         ...devices["Pixel 7"],
+      },
+    },
+    {
+      name: "mobile-webkit",
+      use: {
+        ...devices["iPhone 15"],
       },
     },
   ],

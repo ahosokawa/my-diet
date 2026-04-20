@@ -39,6 +39,7 @@ export function GramsStepper({
         <input
           inputMode="numeric"
           pattern="[0-9]*"
+          aria-label="Grams"
           className="w-14 bg-transparent text-center text-base font-semibold tabular-nums text-fg-1 outline-none"
           value={draft}
           onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ""))}

@@ -313,6 +313,7 @@ export default function IntakePage() {
                 <input
                   inputMode="numeric"
                   autoFocus
+                  aria-label="Age"
                   className="input text-2xl font-semibold tabular-nums"
                   value={d.age}
                   onChange={(e) =>
@@ -332,6 +333,7 @@ export default function IntakePage() {
                   <input
                     inputMode="numeric"
                     autoFocus
+                    aria-label="Feet"
                     className="input text-2xl font-semibold tabular-nums"
                     value={d.heightFt}
                     onChange={(e) =>
@@ -346,6 +348,7 @@ export default function IntakePage() {
                   <label className="label">Inches</label>
                   <input
                     inputMode="numeric"
+                    aria-label="Inches"
                     className="input text-2xl font-semibold tabular-nums"
                     value={d.heightIn}
                     onChange={(e) =>
@@ -365,6 +368,7 @@ export default function IntakePage() {
                 <input
                   inputMode="decimal"
                   autoFocus
+                  aria-label="Weight pounds"
                   className="input text-2xl font-semibold tabular-nums"
                   value={d.weightLb}
                   onChange={(e) =>
@@ -725,6 +729,7 @@ export default function IntakePage() {
                       <input
                         autoFocus
                         inputMode="numeric"
+                        aria-label="Custom calories per day"
                         className="input text-2xl font-semibold tabular-nums"
                         placeholder="2400"
                         value={customKcal}

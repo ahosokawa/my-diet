@@ -345,7 +345,7 @@ function MealDetail() {
                 </div>
               </div>
               {selected.map((s) => (
-                <div key={s.food.id} className="space-y-2">
+                <div key={s.food.id} data-food-row data-food-name={s.food.name} className="space-y-2">
                   <div className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold">{s.food.name}</div>
@@ -576,6 +576,7 @@ function MealDetail() {
             <input
               className="input"
               autoFocus
+              aria-label="Food name"
               value={customDraft.name}
               onChange={(e) =>
                 setCustomDraft({ ...customDraft, name: e.target.value })
@@ -599,6 +600,7 @@ function MealDetail() {
             <div className="relative">
               <input
                 inputMode="decimal"
+                aria-label="Serving size"
                 className="input pr-10"
                 placeholder="e.g. 28"
                 value={customDraft.servingSize}
@@ -625,6 +627,7 @@ function MealDetail() {
                 <label className="mb-1 block text-xs text-fg-3">Calories</label>
                 <input
                   inputMode="decimal"
+                  aria-label="Calories per serving"
                   className="input"
                   value={customDraft.kcalPerServing}
                   onChange={(e) =>
@@ -640,6 +643,7 @@ function MealDetail() {
                 <label className="mb-1 block text-xs text-fg-3">Protein (g)</label>
                 <input
                   inputMode="decimal"
+                  aria-label="Protein per serving"
                   className="input"
                   value={customDraft.proteinPerServing}
                   onChange={(e) =>
@@ -655,6 +659,7 @@ function MealDetail() {
                 <label className="mb-1 block text-xs text-fg-3">Fat (g)</label>
                 <input
                   inputMode="decimal"
+                  aria-label="Fat per serving"
                   className="input"
                   value={customDraft.fatPerServing}
                   onChange={(e) =>
@@ -670,6 +675,7 @@ function MealDetail() {
                 <label className="mb-1 block text-xs text-fg-3">Carbs (g)</label>
                 <input
                   inputMode="decimal"
+                  aria-label="Carbs per serving"
                   className="input"
                   value={customDraft.carbPerServing}
                   onChange={(e) =>
@@ -687,6 +693,7 @@ function MealDetail() {
             <label className="label">Category</label>
             <input
               className="input"
+              aria-label="Category"
               value={customDraft.category}
               onChange={(e) =>
                 setCustomDraft({ ...customDraft, category: e.target.value })
@@ -761,6 +768,7 @@ function MealDetail() {
       >
         <input
           autoFocus
+          aria-label="Combo name"
           className="input"
           placeholder="Combo name (e.g. 'Chicken & Rice')"
           value={comboName}
