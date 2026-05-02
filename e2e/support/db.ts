@@ -5,13 +5,17 @@ import type { EnvelopeTables } from "@/lib/backup/envelope";
  * Read all rows from a Dexie object store in the page's IndexedDB.
  * Use to assert post-action persistence (e.g. new targets row after goal change).
  */
+// Keep in sync with SCHEMA_VERSION in support/seed.ts. Dexie scales the
+// user-facing `this.version(N)` by 10 when opening IDB — so version 6 → 60.
+const SCHEMA_VERSION = 60;
+
 export async function readTable<K extends keyof EnvelopeTables>(
   page: Page,
   store: K
 ): Promise<EnvelopeTables[K]> {
-  return page.evaluate(async (name) => {
+  return page.evaluate(async ({ name, version }) => {
     const db: IDBDatabase = await new Promise((resolve, reject) => {
-      const req = indexedDB.open("my-diet");
+      const req = indexedDB.open("my-diet", version);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
@@ -24,7 +28,7 @@ export async function readTable<K extends keyof EnvelopeTables>(
     });
     db.close();
     return rows as never;
-  }, store) as Promise<EnvelopeTables[K]>;
+  }, { name: store, version: SCHEMA_VERSION }) as Promise<EnvelopeTables[K]>;
 }
 
 /**
