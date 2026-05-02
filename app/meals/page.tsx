@@ -14,6 +14,7 @@ import {
   addCustomFood,
   getCurrentTargets,
   getMealLog,
+  getProfile,
   getSchedule,
   listFoods,
   logMeal,
@@ -87,12 +88,13 @@ function MealDetail() {
 
   useEffect(() => {
     (async () => {
-      const [t, sched, foods, cs, log] = await Promise.all([
+      const [t, sched, foods, cs, log, profile] = await Promise.all([
         getCurrentTargets(),
         getSchedule(),
         listFoods(),
         listCombos(),
         getMealLog(date, mealIndex),
+        getProfile(),
       ]);
       setAllFoods(foods);
       setCombos(cs);
@@ -106,9 +108,11 @@ function MealDetail() {
         time,
         postWorkout: i === pwIdx,
       }));
+      const carbBias = profile?.enablePostWorkoutCarbBias === false ? 0 : 0.5;
       const dist = distributeMeals(
         { kcal: t.kcal, proteinG: t.proteinG, fatG: t.fatG, carbG: t.carbG },
-        slots
+        slots,
+        { postWorkoutCarbBias: carbBias }
       );
       if (dist[mealIndex]) setTarget(dist[mealIndex]);
 

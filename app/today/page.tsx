@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ChevronLeft, ChevronRight, Check, Dumbbell } from "@/components/ui/Icon";
 import {
   getCurrentTargets,
+  getProfile,
   getSchedule,
   getMealLogsForDate,
   getReviewState,
@@ -58,10 +59,11 @@ function TodayView() {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [t, sched, logs] = await Promise.all([
+      const [t, sched, logs, profile] = await Promise.all([
         getCurrentTargets(),
         getSchedule(),
         getMealLogsForDate(date),
+        getProfile(),
       ]);
       if (cancelled) return;
       if (!t) {
@@ -79,9 +81,11 @@ function TodayView() {
         postWorkout: i === pwIdx,
       }));
 
+      const carbBias = profile?.enablePostWorkoutCarbBias === false ? 0 : 0.5;
       const mealTargets = distributeMeals(
         { kcal: t.kcal, proteinG: t.proteinG, fatG: t.fatG, carbG: t.carbG },
-        slots
+        slots,
+        { postWorkoutCarbBias: carbBias }
       );
 
       const cards: MealCard[] = slots.map((s, i) => ({

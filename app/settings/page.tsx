@@ -7,7 +7,8 @@ import { TabBar } from "@/components/TabBar";
 import { Toggle } from "@/components/ui/Toggle";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Sheet } from "@/components/ui/Sheet";
-import { Bell, Cloud, ExternalLink, Eye, EyeOff, User } from "@/components/ui/Icon";
+import { Bell, Cloud, Dumbbell, ExternalLink, Eye, EyeOff, User } from "@/components/ui/Icon";
+import { haptic } from "@/lib/ui/haptics";
 import {
   DEFAULT_NOTIF_PREFS,
   getCurrentTargets,
@@ -229,6 +230,14 @@ export default function SettingsPage() {
     await saveNotifPrefs(next);
     await rescheduleNotifications(next);
     setSaving(false);
+  }
+
+  async function onToggleCarbBias(v: boolean) {
+    if (!profile) return;
+    const next: Profile = { ...profile, enablePostWorkoutCarbBias: v };
+    setProfile(next);
+    await saveProfile(next);
+    haptic("success");
   }
 
   async function onToggleEnable() {
@@ -620,6 +629,27 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {profile && (
+            <div className="card mb-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
+                  <Dumbbell className="h-5 w-5" />
+                </span>
+                <div className="flex-1">
+                  <h2 className="font-semibold">Boost post-workout carbs</h2>
+                  <p className="text-xs text-fg-3">
+                    Shifts more carbs into the first meal after your workout.
+                  </p>
+                </div>
+                <Toggle
+                  label="Boost post-workout carbs"
+                  checked={profile.enablePostWorkoutCarbBias !== false}
+                  onChange={onToggleCarbBias}
+                />
+              </div>
             </div>
           )}
 

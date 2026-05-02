@@ -2,8 +2,8 @@ import type { Page } from "@playwright/test";
 import type { EnvelopeTables } from "@/lib/backup/envelope";
 
 // Keep in sync with SCHEMA_VERSION in support/seed.ts. Dexie scales the
-// user-facing `this.version(N)` by 10 when opening IDB — so version 6 → 60.
-const SCHEMA_VERSION = 60;
+// user-facing `this.version(N)` by 10 when opening IDB — so version 7 → 70.
+const SCHEMA_VERSION = 70;
 
 /**
  * Read all rows from a Dexie object store in the page's IndexedDB.

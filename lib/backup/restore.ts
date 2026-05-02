@@ -65,21 +65,34 @@ function migrateTables(
   tables: EnvelopeTables,
   fromVersion: number
 ): EnvelopeTables {
-  if (fromVersion >= 6) return tables;
-  // v5 → v6: goal/goalStartDate on profile, proteinPerLb/fatPerLb on targets
-  return {
-    ...tables,
-    profile: tables.profile.map((p) => ({
-      ...p,
-      goal: p.goal ?? "maintain",
-      goalStartDate:
-        p.goalStartDate ??
-        new Date(p.createdAt ?? Date.now()).toISOString().slice(0, 10),
-    })),
-    targets: tables.targets.map((t) => ({
-      ...t,
-      proteinPerLb: t.proteinPerLb ?? 1.0,
-      fatPerLb: t.fatPerLb ?? 0.45,
-    })),
-  };
+  let next = tables;
+  if (fromVersion < 6) {
+    // v5 → v6: goal/goalStartDate on profile, proteinPerLb/fatPerLb on targets
+    next = {
+      ...next,
+      profile: next.profile.map((p) => ({
+        ...p,
+        goal: p.goal ?? "maintain",
+        goalStartDate:
+          p.goalStartDate ??
+          new Date(p.createdAt ?? Date.now()).toISOString().slice(0, 10),
+      })),
+      targets: next.targets.map((t) => ({
+        ...t,
+        proteinPerLb: t.proteinPerLb ?? 1.0,
+        fatPerLb: t.fatPerLb ?? 0.45,
+      })),
+    };
+  }
+  if (fromVersion < 7) {
+    // v6 → v7: enablePostWorkoutCarbBias on profile (default true)
+    next = {
+      ...next,
+      profile: next.profile.map((p) => ({
+        ...p,
+        enablePostWorkoutCarbBias: p.enablePostWorkoutCarbBias ?? true,
+      })),
+    };
+  }
+  return next;
 }

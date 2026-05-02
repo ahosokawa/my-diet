@@ -15,6 +15,7 @@ export type Profile = {
   goalStartDate: string; // YYYY-MM-DD — anchor for rate-band corridor & review baseline
   createdAt: number;
   lastReviewedDate?: string; // YYYY-MM-DD of most recently completed weekly review
+  enablePostWorkoutCarbBias?: boolean; // default true; when false, carbs split evenly even on workout days
 };
 
 export type Targets = {
@@ -158,6 +159,13 @@ class MyDietDb extends Dexie {
       await tx.table("targets").toCollection().modify((t) => {
         if (t.proteinPerLb === undefined) t.proteinPerLb = 1.0;
         if (t.fatPerLb === undefined) t.fatPerLb = 0.45;
+      });
+    });
+    this.version(7).upgrade(async (tx) => {
+      await tx.table("profile").toCollection().modify((p) => {
+        if (p.enablePostWorkoutCarbBias === undefined) {
+          p.enablePostWorkoutCarbBias = true;
+        }
       });
     });
   }
