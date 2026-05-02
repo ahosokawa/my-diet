@@ -1,6 +1,7 @@
 import { db, type Combo, type Food, type MealLog, type NotifPrefs, type Profile, type ScheduleDay, type Targets, type WeightEntry } from "./schema";
 import seedFoods from "./seed-foods.json";
 import { todayStr } from "@/lib/date";
+import { isReviewWindowOpen, wasReviewedThisWeek } from "@/lib/review/window";
 
 export { todayStr };
 
@@ -40,7 +41,10 @@ export async function getCurrentTargets(): Promise<Targets | undefined> {
 }
 
 export async function saveTargets(t: Omit<Targets, "id">): Promise<void> {
-  await db.targets.add(t);
+  await db.transaction("rw", db.targets, async () => {
+    await db.targets.where("dateEffective").equals(t.dateEffective).delete();
+    await db.targets.add(t);
+  });
 }
 
 export async function hasPendingTargetChange(): Promise<boolean> {
@@ -49,10 +53,48 @@ export async function hasPendingTargetChange(): Promise<boolean> {
   return future > 0;
 }
 
+export async function getPendingTargets(): Promise<Targets | undefined> {
+  const today = todayStr();
+  return db.targets.where("dateEffective").above(today).first();
+}
+
 export async function isReviewEligible(): Promise<boolean> {
   const p = await getProfile();
   if (!p) return false;
   return Date.now() - p.createdAt >= REVIEW_ELIGIBLE_AFTER_MS;
+}
+
+export async function markReviewDone(date: string): Promise<void> {
+  await db.profile.update("me", { lastReviewedDate: date });
+}
+
+export type ReviewState = {
+  eligible: boolean;
+  windowOpen: boolean;
+  doneThisWeek: boolean;
+  lastReviewedDate?: string;
+  pendingTargets?: Targets;
+  daysUntilEligible: number;
+};
+
+export async function getReviewState(today: string): Promise<ReviewState> {
+  const p = await getProfile();
+  const eligible = !!p && Date.now() - p.createdAt >= REVIEW_ELIGIBLE_AFTER_MS;
+  const daysUntilEligible = p
+    ? Math.max(
+        0,
+        Math.ceil(7 - (Date.now() - p.createdAt) / (24 * 60 * 60 * 1000))
+      )
+    : 7;
+  const pending = await getPendingTargets();
+  return {
+    eligible,
+    windowOpen: isReviewWindowOpen(today),
+    doneThisWeek: wasReviewedThisWeek(p?.lastReviewedDate, today),
+    lastReviewedDate: p?.lastReviewedDate,
+    pendingTargets: pending,
+    daysUntilEligible,
+  };
 }
 
 export async function listFoods(): Promise<Food[]> {

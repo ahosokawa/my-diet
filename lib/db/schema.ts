@@ -14,6 +14,7 @@ export type Profile = {
   goal: Goal;
   goalStartDate: string; // YYYY-MM-DD — anchor for rate-band corridor & review baseline
   createdAt: number;
+  lastReviewedDate?: string; // YYYY-MM-DD of most recently completed weekly review
 };
 
 export type Targets = {
@@ -25,7 +26,7 @@ export type Targets = {
   carbG: number;
   proteinPerLb: number;
   fatPerLb: number;
-  source: "auto" | "override";
+  source: "auto" | "override" | "stay";
 };
 
 export type Food = {

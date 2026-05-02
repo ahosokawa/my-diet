@@ -10,8 +10,11 @@ import { haptic } from "@/lib/ui/haptics";
 import {
   getCurrentTargets,
   getProfile,
+  getReviewState,
   listWeights,
+  markReviewDone,
   saveTargets,
+  type ReviewState,
 } from "@/lib/db/repos";
 import type { Profile, Targets, WeightEntry } from "@/lib/db/schema";
 import { computeReview, type ReviewSuggestion } from "@/lib/review/engine";
@@ -22,6 +25,20 @@ function nextMonday(fromStr: string): string {
   const dow = parseYmd(fromStr).getDay();
   const add = dow === 1 ? 7 : (8 - dow) % 7 || 7;
   return shiftDate(fromStr, add);
+}
+
+function nextFriday(fromStr: string): string {
+  const dow = parseYmd(fromStr).getDay();
+  const add = (5 - dow + 7) % 7 || 7;
+  return shiftDate(fromStr, add);
+}
+
+function formatLongDate(s: string): string {
+  return parseYmd(s).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function splitWeights(
@@ -90,26 +107,25 @@ export default function ReviewPage() {
   const [targets, setTargets] = useState<Targets | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [weights, setWeights] = useState<WeightEntry[]>([]);
+  const [reviewState, setReviewState] = useState<ReviewState | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [daysUntilEligible, setDaysUntilEligible] = useState(0);
   const [overrideKcal, setOverrideKcal] = useState<number | "">("");
   const [showOverride, setShowOverride] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [changing, setChanging] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [t, w, p] = await Promise.all([
+      const [t, w, p, rs] = await Promise.all([
         getCurrentTargets(),
         listWeights(30),
         getProfile(),
+        getReviewState(todayStr()),
       ]);
       if (t) setTargets(t);
       setWeights(w);
-      if (p) {
-        setProfile(p);
-        const daysSince = (Date.now() - p.createdAt) / (24 * 60 * 60 * 1000);
-        setDaysUntilEligible(Math.max(0, Math.ceil(7 - daysSince)));
-      }
+      if (p) setProfile(p);
+      setReviewState(rs);
       setLoaded(true);
     })();
   }, []);
@@ -152,6 +168,7 @@ export default function ReviewPage() {
       fatPerLb: targets.fatPerLb,
       source,
     });
+    await markReviewDone(todayStr());
     haptic("success");
     setSaving(false);
     router.push("/today");
@@ -181,20 +198,134 @@ export default function ReviewPage() {
     );
   }
 
-  if (daysUntilEligible > 0) {
+  if (reviewState && !reviewState.eligible) {
+    const days = reviewState.daysUntilEligible;
     return (
       <>
         <main className="flex-1 overflow-y-auto p-4">
           <Header title="Weekly check-in" />
           <div className="card mt-4">
             <h2 className="mb-2 font-semibold">
-              Come back in {daysUntilEligible} day{daysUntilEligible !== 1 ? "s" : ""}
+              Come back in {days} day{days !== 1 ? "s" : ""}
             </h2>
             <p className="text-sm text-fg-2">
               Check-ins start after your first full week. Keep logging daily
               weights and we'll have something to compare.
             </p>
           </div>
+        </main>
+        <TabBar />
+      </>
+    );
+  }
+
+  if (reviewState && !reviewState.windowOpen) {
+    const nextFri = nextFriday(today);
+    return (
+      <>
+        <main className="flex-1 overflow-y-auto p-4">
+          <Header title="Weekly check-in" />
+          <div className="card mt-4">
+            <h2 className="mb-2 font-semibold">Next check-in {formatLongDate(nextFri)}</h2>
+            <p className="text-sm text-fg-2">
+              Reviews run Friday through Sunday. Keep logging daily weights so
+              we have a clean week to compare.
+            </p>
+          </div>
+        </main>
+        <TabBar />
+      </>
+    );
+  }
+
+  if (reviewState?.doneThisWeek && !changing) {
+    const pending = reviewState.pendingTargets;
+    const source = pending?.source ?? "auto";
+    const pendKcal = pending?.kcal ?? targets.kcal;
+    const doneVerdict: "maintain" | "decrease" | "increase" =
+      source === "stay" || pendKcal === targets.kcal
+        ? "maintain"
+        : pendKcal > targets.kcal
+        ? "increase"
+        : "decrease";
+    const meta = {
+      maintain: {
+        label: source === "stay" ? "Staying the course" : "Hold steady",
+        Icon: Minus,
+        tint: "bg-surface-3 text-fg-1",
+        iconTint: "bg-surface-2 text-fg-2",
+      },
+      decrease: {
+        label: source === "override" ? "Custom target" : "Cut a bit",
+        Icon: TrendingDown,
+        tint: "bg-amber-50 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100",
+        iconTint: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+      },
+      increase: {
+        label: source === "override" ? "Custom target" : "Bump it up",
+        Icon: TrendingUp,
+        tint: "bg-brand-50 text-brand-900 dark:bg-brand-900/30 dark:text-brand-100",
+        iconTint: "bg-brand-100 text-brand-700 dark:bg-brand-900/50 dark:text-brand-300",
+      },
+    }[doneVerdict];
+    const DoneIcon = meta.Icon;
+    return (
+      <>
+        <main className="flex-1 overflow-y-auto p-4">
+          <Header title="Weekly check-in" />
+          <div className={`card mt-4 mb-4 ${meta.tint}`}>
+            <div className="flex items-start gap-3">
+              <span
+                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${meta.iconTint}`}
+              >
+                <DoneIcon className="h-6 w-6" strokeWidth={2.5} />
+              </span>
+              <div className="flex-1">
+                <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
+                  This week's choice
+                </div>
+                <h2 className="text-2xl font-bold">{meta.label}</h2>
+                {reviewState.lastReviewedDate && (
+                  <p className="mt-1 text-sm opacity-90">
+                    Reviewed {formatLongDate(reviewState.lastReviewedDate)}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {pending && (
+            <div className="card mb-4">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-3">
+                Targets starting {pending.dateEffective}
+              </h3>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <div className="mb-1 text-xs uppercase text-fg-3">Current</div>
+                  <div className="font-semibold tabular-nums">{targets.kcal} kcal</div>
+                  <div className="text-xs text-fg-3 tabular-nums">
+                    {targets.proteinG}P · {targets.fatG}F · {targets.carbG}C
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1 text-xs uppercase text-fg-3">From Monday</div>
+                  <div className="font-semibold tabular-nums text-brand-700 dark:text-brand-300">
+                    {pending.kcal} kcal
+                  </div>
+                  <div className="text-xs text-fg-3 tabular-nums">
+                    {pending.proteinG}P · {pending.fatG}F · {pending.carbG}C
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <button
+            className="btn-secondary w-full"
+            onClick={() => setChanging(true)}
+          >
+            Change my mind
+          </button>
         </main>
         <TabBar />
       </>
@@ -342,6 +473,15 @@ export default function ReviewPage() {
             >
               Override
             </button>
+            {suggestion.verdict !== "maintain" && (
+              <button
+                className="btn-secondary flex-1"
+                disabled={saving}
+                onClick={() => apply(targets.kcal, "stay")}
+              >
+                Stay
+              </button>
+            )}
             <button
               className="btn-primary flex-1"
               disabled={saving}

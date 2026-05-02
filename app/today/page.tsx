@@ -14,8 +14,7 @@ import {
   getCurrentTargets,
   getSchedule,
   getMealLogsForDate,
-  hasPendingTargetChange,
-  isReviewEligible,
+  getReviewState,
 } from "@/lib/db/repos";
 import type { Targets, ScheduleDay, MealLog } from "@/lib/db/schema";
 import { distributeMeals, type MealSlot } from "@/lib/nutrition/distribute";
@@ -102,11 +101,10 @@ function TodayView() {
 
   useEffect(() => {
     (async () => {
-      const [eligible, pending] = await Promise.all([
-        isReviewEligible(),
-        hasPendingTargetChange(),
-      ]);
-      setReviewPending(eligible && !pending);
+      const state = await getReviewState(todayStr());
+      setReviewPending(
+        state.eligible && state.windowOpen && !state.doneThisWeek
+      );
     })();
   }, [date]);
 
