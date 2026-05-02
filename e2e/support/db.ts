@@ -1,34 +1,69 @@
 import type { Page } from "@playwright/test";
 import type { EnvelopeTables } from "@/lib/backup/envelope";
 
-/**
- * Read all rows from a Dexie object store in the page's IndexedDB.
- * Use to assert post-action persistence (e.g. new targets row after goal change).
- */
 // Keep in sync with SCHEMA_VERSION in support/seed.ts. Dexie scales the
 // user-facing `this.version(N)` by 10 when opening IDB — so version 6 → 60.
 const SCHEMA_VERSION = 60;
 
+/**
+ * Read all rows from a Dexie object store in the page's IndexedDB.
+ * Use to assert post-action persistence (e.g. new targets row after goal change).
+ */
 export async function readTable<K extends keyof EnvelopeTables>(
   page: Page,
   store: K
 ): Promise<EnvelopeTables[K]> {
-  return page.evaluate(async ({ name, version }) => {
-    const db: IDBDatabase = await new Promise((resolve, reject) => {
-      const req = indexedDB.open("my-diet", version);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    const rows = await new Promise<unknown[]>((resolve, reject) => {
-      const tx = db.transaction(name, "readonly");
-      const s = tx.objectStore(name);
-      const req = s.getAll();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    db.close();
-    return rows as never;
-  }, { name: store, version: SCHEMA_VERSION }) as Promise<EnvelopeTables[K]>;
+  return page.evaluate(
+    async ({ name, version }) => {
+      const sleep = (ms: number) =>
+        new Promise<void>((r) => setTimeout(r, ms));
+
+      const readOnce = async (): Promise<unknown[]> => {
+        const db: IDBDatabase = await new Promise((resolve, reject) => {
+          const req = indexedDB.open("my-diet", version);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error ?? new Error("open failed"));
+          req.onblocked = () => reject(new Error("blocked"));
+          req.onupgradeneeded = () => {
+            try {
+              req.transaction?.abort();
+            } catch {}
+          };
+        });
+        try {
+          if (!Array.from(db.objectStoreNames).includes(name)) {
+            throw new Error(`missing store ${name}`);
+          }
+          return await new Promise<unknown[]>((resolve, reject) => {
+            const tx = db.transaction(name, "readonly");
+            const s = tx.objectStore(name);
+            const req = s.getAll();
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+          });
+        } finally {
+          db.close();
+        }
+      };
+
+      const deadline = Date.now() + 5_000;
+      let lastErr: unknown;
+      while (Date.now() < deadline) {
+        try {
+          return await readOnce();
+        } catch (e) {
+          lastErr = e;
+          await sleep(50);
+        }
+      }
+      throw new Error(
+        `readTable failed after retries: ${
+          lastErr instanceof Error ? lastErr.message : String(lastErr)
+        }`
+      );
+    },
+    { name: store, version: SCHEMA_VERSION }
+  ) as Promise<EnvelopeTables[K]>;
 }
 
 /**
