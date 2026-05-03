@@ -15,7 +15,7 @@ const STORES: (keyof EnvelopeTables)[] = [
 // Must match the highest `this.version(N)` block in `lib/db/schema.ts`,
 // multiplied by 10 — Dexie internally scales the user-facing version by 10
 // when opening the underlying IDB (see Dexie source: `Math.round(db.verno * 10)`).
-const SCHEMA_VERSION = 60;
+const SCHEMA_VERSION = 70;
 
 export async function seedEnvelope(page: Page, tables: EnvelopeTables): Promise<void> {
   await page.goto("/");
