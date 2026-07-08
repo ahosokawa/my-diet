@@ -1,7 +1,10 @@
 "use client";
 
 import { AnimatePresence, motion, type PanInfo } from "framer-motion";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 type Detent = "auto" | "medium" | "large";
 
@@ -21,13 +24,50 @@ const DETENT_CLASS: Record<Detent, string> = {
 };
 
 export function Sheet({ open, onClose, title, children, footer, detent = "large" }: Props) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
+      if (e.key === "Tab") {
+        // Keep Tab cycling within the sheet while it's modal.
+        const panel = panelRef.current;
+        if (!panel) return;
+        const focusables = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        if (!active || !panel.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        } else if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+
+    // Move focus into the sheet on open; restore it to the opener on close.
+    // Focus the panel itself (not the first control) so text inputs don't pop
+    // the on-screen keyboard uninvited; autoFocus children still win.
+    const opener = document.activeElement as HTMLElement | null;
+    const focusTimer = setTimeout(() => {
+      const panel = panelRef.current;
+      if (!panel || panel.contains(document.activeElement)) return;
+      panel.focus();
+    }, 0);
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      clearTimeout(focusTimer);
+      opener?.focus?.();
+    };
   }, [open, onClose]);
 
   function onDragEnd(_: unknown, info: PanInfo) {
@@ -51,10 +91,12 @@ export function Sheet({ open, onClose, title, children, footer, detent = "large"
             className="absolute inset-0 cursor-default bg-black/40 backdrop-blur-sm"
           />
           <motion.div
+            ref={panelRef}
             role="dialog"
             aria-modal="true"
             aria-label={title}
-            className={`relative flex ${DETENT_CLASS[detent]} flex-col rounded-t-3xl bg-surface-2 shadow-[0_-8px_32px_rgba(0,0,0,0.18)]`}
+            tabIndex={-1}
+            className={`relative flex ${DETENT_CLASS[detent]} flex-col rounded-t-3xl bg-surface-2 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] outline-none`}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}

@@ -12,10 +12,7 @@ import { Lock, LockOpen, X, Plus, Sparkles, Star, Search, Trash2, Copy, Check } 
 import { haptic } from "@/lib/ui/haptics";
 import {
   addCustomFood,
-  getCurrentTargets,
   getMealLog,
-  getProfile,
-  getSchedule,
   listFoods,
   logMeal,
   listCombos,
@@ -24,11 +21,10 @@ import {
   toggleFavoriteFood,
   getFoodsByIds,
 } from "@/lib/db/repos";
-import type { Combo, Food, Targets } from "@/lib/db/schema";
-import { distributeMeals, type MealSlot } from "@/lib/nutrition/distribute";
-import { postWorkoutMealIndex } from "@/lib/schedule/week";
+import type { Combo, Food } from "@/lib/db/schema";
+import { getDayPlan } from "@/lib/plan/day-plan";
 import { solvePortions, macrosFor, type FoodMacros } from "@/lib/nutrition/solver";
-import { parseYmd, todayStr } from "@/lib/date";
+import { todayStr } from "@/lib/date";
 import { rankFoods } from "@/lib/ui/food-search";
 
 type Selection = { food: Food; grams: number; locked: boolean };
@@ -79,6 +75,7 @@ function MealDetail() {
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customDraft, setCustomDraft] = useState<CustomDraft>(EMPTY_CUSTOM);
   const [savingCustom, setSavingCustom] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   async function reload() {
     const [foods, cs] = await Promise.all([listFoods(), listCombos()]);
@@ -87,34 +84,23 @@ function MealDetail() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
     (async () => {
-      const [t, sched, foods, cs, log, profile] = await Promise.all([
-        getCurrentTargets(),
-        getSchedule(),
+      const [plan, foods, cs, log] = await Promise.all([
+        getDayPlan(date),
         listFoods(),
         listCombos(),
         getMealLog(date, mealIndex),
-        getProfile(),
       ]);
+      if (cancelled) return;
       setAllFoods(foods);
       setCombos(cs);
-      if (!t) return;
-
-      const weekday = parseYmd(date).getDay();
-      const day = sched[weekday] ?? sched[0];
-      const pwIdx = postWorkoutMealIndex(day);
-      const slots: MealSlot[] = day.mealTimes.map((time, i) => ({
-        index: i,
-        time,
-        postWorkout: i === pwIdx,
-      }));
-      const carbBias = profile?.enablePostWorkoutCarbBias === false ? 0 : 0.5;
-      const dist = distributeMeals(
-        { kcal: t.kcal, proteinG: t.proteinG, fatG: t.fatG, carbG: t.carbG },
-        slots,
-        { postWorkoutCarbBias: carbBias }
-      );
-      if (dist[mealIndex]) setTarget(dist[mealIndex]);
+      if (!plan) {
+        setLoading(false);
+        return;
+      }
+      setTarget(plan.mealTargets[mealIndex] ?? null);
 
       if (log && log.items.length > 0) {
         const byId = new Map(foods.map((f) => [f.id!, f]));
@@ -128,7 +114,11 @@ function MealDetail() {
         setSelected(sel);
         setAlreadyLogged(true);
       }
+      setLoading(false);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [date, mealIndex]);
 
   const filteredFoods = useMemo(() => {
@@ -309,11 +299,30 @@ function MealDetail() {
     router.push(date === todayStr() ? "/today" : `/today?d=${date}`);
   }
 
+  const backHref = date === todayStr() ? "/today" : `/today?d=${date}`;
+
+  if (loading) {
+    return (
+      <main className="flex-1 overflow-y-auto">
+        <Header title="Meal" back={backHref} />
+        <p className="mt-12 text-center text-fg-3">Loading…</p>
+      </main>
+    );
+  }
+
   if (!target) {
     return (
       <main className="flex-1 overflow-y-auto">
-        <Header title="Meal" back="/today" />
-        <p className="mt-12 text-center text-fg-3">Loading…</p>
+        <Header title="Meal" back={backHref} />
+        <div className="mx-4 mt-12 rounded-xl bg-surface-2 p-6 text-center">
+          <p className="font-semibold">Meal not found</p>
+          <p className="mt-1 text-sm text-fg-3">
+            This day doesn't have a meal #{mealIndex + 1}. Your schedule may have changed.
+          </p>
+          <button className="btn-secondary mt-4" onClick={() => router.push(backHref)}>
+            Back to day
+          </button>
+        </div>
       </main>
     );
   }
@@ -321,7 +330,7 @@ function MealDetail() {
   return (
     <>
       <main className="relative flex-1 overflow-y-auto">
-        <Header title={`Meal ${mealIndex + 1}`} back="/today" />
+        <Header title={`Meal ${mealIndex + 1}`} back={backHref} />
 
         <div className="px-4 pb-40 pt-2">
           <div className="card mb-4">

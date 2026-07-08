@@ -15,6 +15,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
   e2e:
     runs-on: ubuntu-latest
     steps:
@@ -34,7 +47,7 @@ jobs:
           retention-days: 7
 
   build:
-    needs: e2e
+    needs: [checks, e2e]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +57,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:static
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-static
+          path: playwright-report-static
+          retention-days: 7
       - uses: actions/upload-pages-artifact@v3
         with:
           path: out

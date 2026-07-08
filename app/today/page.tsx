@@ -11,15 +11,12 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ChevronLeft, ChevronRight, Check, Dumbbell } from "@/components/ui/Icon";
 import {
-  getCurrentTargets,
-  getProfile,
-  getSchedule,
   getMealLogsForDate,
   getReviewState,
+  syncBuiltinFoods,
 } from "@/lib/db/repos";
-import type { Targets, ScheduleDay, MealLog } from "@/lib/db/schema";
-import { distributeMeals, type MealSlot } from "@/lib/nutrition/distribute";
-import { postWorkoutMealIndex } from "@/lib/schedule/week";
+import type { Targets, MealLog } from "@/lib/db/schema";
+import { getDayPlan } from "@/lib/plan/day-plan";
 import { parseYmd, shiftDate, todayStr } from "@/lib/date";
 
 type MealCard = {
@@ -59,40 +56,22 @@ function TodayView() {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [t, sched, logs, profile] = await Promise.all([
-        getCurrentTargets(),
-        getSchedule(),
+      const [plan, logs] = await Promise.all([
+        getDayPlan(date),
         getMealLogsForDate(date),
-        getProfile(),
       ]);
       if (cancelled) return;
-      if (!t) {
+      if (!plan) {
         setLoading(false);
         return;
       }
-      setTargets(t);
+      setTargets(plan.targets);
 
-      const weekday = parseYmd(date).getDay();
-      const day: ScheduleDay = sched[weekday] ?? sched[0];
-      const pwIdx = postWorkoutMealIndex(day);
-      const slots: MealSlot[] = day.mealTimes.map((time, i) => ({
-        index: i,
-        time,
-        postWorkout: i === pwIdx,
-      }));
-
-      const carbBias = profile?.enablePostWorkoutCarbBias === false ? 0 : 0.5;
-      const mealTargets = distributeMeals(
-        { kcal: t.kcal, proteinG: t.proteinG, fatG: t.fatG, carbG: t.carbG },
-        slots,
-        { postWorkoutCarbBias: carbBias }
-      );
-
-      const cards: MealCard[] = slots.map((s, i) => ({
+      const cards: MealCard[] = plan.slots.map((s, i) => ({
         index: i,
         time: s.time,
         postWorkout: s.postWorkout,
-        target: mealTargets[i],
+        target: plan.mealTargets[i],
         logged: logs.find((l) => l.index === i),
       }));
       setMeals(cards);
@@ -111,6 +90,11 @@ function TodayView() {
       );
     })();
   }, [date]);
+
+  // Deliver builtin foods added in newer releases to existing installs.
+  useEffect(() => {
+    syncBuiltinFoods().catch(() => {});
+  }, []);
 
   const totalTarget = targets
     ? { kcal: targets.kcal, proteinG: targets.proteinG, fatG: targets.fatG, carbG: targets.carbG }

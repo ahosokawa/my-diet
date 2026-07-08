@@ -1,4 +1,5 @@
 import { db } from "@/lib/db/schema";
+import { normalizeTables } from "@/lib/db/defaults";
 import {
   checkVersion,
   parseEnvelope,
@@ -27,12 +28,19 @@ export async function restoreFromGist(): Promise<RestoreResult> {
     };
   }
 
+  return restoreFromEnvelopeJson(json);
+}
+
+export async function restoreFromEnvelopeJson(json: string): Promise<RestoreResult> {
   const parsed = parseEnvelope(json);
   if (!parsed.ok) return { ok: false, reason: parsed.reason };
   const vc = checkVersion(parsed.env.schemaVersion);
   if (!vc.ok) return { ok: false, reason: vc.reason };
 
-  const t = migrateTables(parsed.env.tables, parsed.env.schemaVersion);
+  // Unconditional normalization replaces per-version migration replay: every
+  // applier is a `?? default`, so rows from any accepted backup version — and
+  // already-current rows — come out the same.
+  const t = normalizeTables(parsed.env.tables);
   const dataTables = [
     db.profile,
     db.targets,
@@ -61,38 +69,3 @@ export async function restoreFromGist(): Promise<RestoreResult> {
   return { ok: true, backupVersion: parsed.env.schemaVersion, exportedAt: parsed.env.exportedAt };
 }
 
-function migrateTables(
-  tables: EnvelopeTables,
-  fromVersion: number
-): EnvelopeTables {
-  let next = tables;
-  if (fromVersion < 6) {
-    // v5 → v6: goal/goalStartDate on profile, proteinPerLb/fatPerLb on targets
-    next = {
-      ...next,
-      profile: next.profile.map((p) => ({
-        ...p,
-        goal: p.goal ?? "maintain",
-        goalStartDate:
-          p.goalStartDate ??
-          new Date(p.createdAt ?? Date.now()).toISOString().slice(0, 10),
-      })),
-      targets: next.targets.map((t) => ({
-        ...t,
-        proteinPerLb: t.proteinPerLb ?? 1.0,
-        fatPerLb: t.fatPerLb ?? 0.45,
-      })),
-    };
-  }
-  if (fromVersion < 7) {
-    // v6 → v7: enablePostWorkoutCarbBias on profile (default true)
-    next = {
-      ...next,
-      profile: next.profile.map((p) => ({
-        ...p,
-        enablePostWorkoutCarbBias: p.enablePostWorkoutCarbBias ?? true,
-      })),
-    };
-  }
-  return next;
-}

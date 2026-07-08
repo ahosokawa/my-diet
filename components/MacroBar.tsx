@@ -22,7 +22,14 @@ export function MacroBar({
           {Math.round(current)} <span className="text-fg-3">/ {Math.round(target)}</span>
         </span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-surface-3">
+      <div
+        role="progressbar"
+        aria-label={label}
+        aria-valuenow={Math.round(current)}
+        aria-valuemin={0}
+        aria-valuemax={Math.round(target)}
+        className="h-2 overflow-hidden rounded-full bg-surface-3"
+      >
         <div
           className="h-full rounded-full transition-all"
           style={{ width: `${pct}%`, background: color }}

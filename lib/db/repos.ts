@@ -1,6 +1,7 @@
 import { db, type Combo, type Food, type MealLog, type NotifPrefs, type Profile, type ScheduleDay, type Targets, type WeightEntry } from "./schema";
 import seedFoods from "./seed-foods.json";
 import { todayStr } from "@/lib/date";
+import { defaultMealTimes } from "@/lib/schedule/week";
 import { isReviewWindowOpen, wasReviewedThisWeek } from "@/lib/review/window";
 
 export { todayStr };
@@ -23,21 +24,24 @@ export async function getProfile(): Promise<Profile | undefined> {
 
 export async function saveProfile(p: Omit<Profile, "id" | "createdAt"> & { createdAt?: number }): Promise<void> {
   await db.profile.put({
+    ...p,
     id: "me",
     createdAt: p.createdAt ?? Date.now(),
-    ...p,
   });
 }
 
-export async function getCurrentTargets(): Promise<Targets | undefined> {
-  const today = todayStr();
+export async function getTargetsForDate(date: string): Promise<Targets | undefined> {
   const active = await db.targets
     .where("dateEffective")
-    .belowOrEqual(today)
+    .belowOrEqual(date)
     .reverse()
     .first();
   if (active) return active;
   return db.targets.orderBy("dateEffective").first();
+}
+
+export async function getCurrentTargets(): Promise<Targets | undefined> {
+  return getTargetsForDate(todayStr());
 }
 
 export async function saveTargets(t: Omit<Targets, "id">): Promise<void> {
@@ -126,11 +130,20 @@ export async function deleteFood(id: number): Promise<void> {
   await db.foods.delete(id);
 }
 
-export async function seedFoodsIfEmpty(): Promise<void> {
-  const count = await db.foods.count();
-  if (count > 0) return;
+/**
+ * Ensure every builtin food from seed-foods.json exists. Adds missing slugs
+ * only — existing rows (including user-modified favorites) are never touched.
+ */
+export async function syncBuiltinFoods(): Promise<void> {
   const rows: Food[] = (seedFoods as Food[]).map((f) => ({ ...f, builtin: 1, favorite: 0 }));
-  await db.foods.bulkAdd(rows);
+  const count = await db.foods.count();
+  if (count === 0) {
+    await db.foods.bulkAdd(rows);
+    return;
+  }
+  const existing = new Set(await db.foods.orderBy("slug").keys());
+  const missing = rows.filter((f) => !existing.has(f.slug));
+  if (missing.length > 0) await db.foods.bulkAdd(missing);
 }
 
 export async function listCombos(): Promise<Combo[]> {
@@ -152,7 +165,7 @@ export async function getSchedule(): Promise<ScheduleDay[]> {
   rows.forEach((r) => byDay.set(r.weekday, r));
   const out: ScheduleDay[] = [];
   for (let w = 0; w < 7; w++) {
-    out.push(byDay.get(w) ?? { weekday: w as ScheduleDay["weekday"], mealTimes: ["08:00", "12:00", "18:00"] });
+    out.push(byDay.get(w) ?? { weekday: w as ScheduleDay["weekday"], mealTimes: defaultMealTimes(3) });
   }
   return out;
 }

@@ -14,7 +14,7 @@ import {
 import {
   saveProfile,
   saveTargets,
-  seedFoodsIfEmpty,
+  syncBuiltinFoods,
   saveWholeSchedule,
   todayStr,
 } from "@/lib/db/repos";
@@ -22,8 +22,8 @@ import type { ScheduleDay } from "@/lib/db/schema";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Check, Dumbbell, ChevronDown, ChevronUp, Copy } from "@/components/ui/Icon";
 import { haptic } from "@/lib/ui/haptics";
-import { WEEKDAY_LABELS, defaultMealTimes, toMinutes } from "@/lib/schedule/week";
-import { minutesToHhmm } from "@/lib/date";
+import { WEEKDAY_LABELS, copyTo, defaultMealTimes } from "@/lib/schedule/week";
+import { DayScheduleEditor, CopyDayPicker } from "@/components/DayScheduleEditor";
 
 type Draft = {
   sex: Sex;
@@ -73,7 +73,6 @@ const ACTIVITY_HINTS: Record<ActivityLevel, string> = {
   very_active: "Physical job + training",
 };
 
-const SHORT_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 const TOTAL_STEPS = 8;
 
 function makeDefaultSchedule(): ScheduleDay[] {
@@ -184,26 +183,9 @@ export default function IntakePage() {
     );
   }
 
-  function setMealCount(weekday: number, count: number) {
-    const day = schedule.find((d) => d.weekday === weekday);
-    const workoutEnd =
-      day?.workoutStart && day.workoutDurationMin
-        ? minutesToHhmm(toMinutes(day.workoutStart) + day.workoutDurationMin)
-        : undefined;
-    updateScheduleDay(weekday, { mealTimes: defaultMealTimes(count, workoutEnd) });
-  }
-
   function applyCopy() {
     if (copyFrom === null || copyTargets.size === 0) return;
-    const src = schedule.find((d) => d.weekday === copyFrom);
-    if (!src) return;
-    setSchedule((prev) =>
-      prev.map((d) =>
-        copyTargets.has(d.weekday) && d.weekday !== copyFrom
-          ? { ...src, weekday: d.weekday as ScheduleDay["weekday"] }
-          : d
-      )
-    );
+    setSchedule((prev) => copyTo(prev, copyFrom, Array.from(copyTargets)));
     setCopyFrom(null);
     setCopyTargets(new Set());
   }
@@ -248,7 +230,7 @@ export default function IntakePage() {
       source: calChoice === "rec" ? "auto" : "override",
     });
     await saveWholeSchedule(schedule);
-    await seedFoodsIfEmpty();
+    await syncBuiltinFoods();
     haptic("success");
     router.replace("/today");
   }
@@ -503,131 +485,32 @@ export default function IntakePage() {
                               className="overflow-hidden"
                             >
                               <div className="space-y-3 border-t border-hairline px-4 py-4">
-                                <div>
-                                  <label className="label">Meals</label>
-                                  <SegmentedControl
-                                    value={sd.mealTimes.length}
-                                    onChange={(v) => setMealCount(sd.weekday, v)}
-                                    options={[1, 2, 3, 4, 5, 6].map((n) => ({
-                                      value: n,
-                                      label: String(n),
-                                    }))}
-                                    ariaLabel="Meals"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="label">Meal times</label>
-                                  <div className="space-y-1">
-                                    {sd.mealTimes.map((t, i) => (
-                                      <input
-                                        key={i}
-                                        type="time"
-                                        className="input text-sm"
-                                        value={t}
-                                        onChange={(e) => {
-                                          const times = [...sd.mealTimes];
-                                          times[i] = e.target.value;
-                                          updateScheduleDay(sd.weekday, {
-                                            mealTimes: times,
-                                          });
-                                        }}
-                                      />
-                                    ))}
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="label">Workout (optional)</label>
-                                  <div className="flex gap-2">
-                                    <input
-                                      type="time"
-                                      className="input text-sm"
-                                      value={sd.workoutStart ?? ""}
-                                      onChange={(e) =>
-                                        updateScheduleDay(sd.weekday, {
-                                          workoutStart: e.target.value || undefined,
-                                        })
-                                      }
-                                    />
-                                    <input
-                                      type="number"
-                                      inputMode="numeric"
-                                      placeholder="min"
-                                      className="input w-20 text-sm"
-                                      value={sd.workoutDurationMin ?? ""}
-                                      onChange={(e) =>
-                                        updateScheduleDay(sd.weekday, {
-                                          workoutDurationMin: e.target.value
-                                            ? Number(e.target.value)
-                                            : undefined,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                  {sd.workoutStart && (
-                                    <button
-                                      className="mt-2 text-xs font-medium text-red-500"
-                                      onClick={() =>
-                                        updateScheduleDay(sd.weekday, {
-                                          workoutStart: undefined,
-                                          workoutDurationMin: undefined,
-                                        })
-                                      }
-                                    >
-                                      Remove workout
-                                    </button>
-                                  )}
-                                </div>
+                                <DayScheduleEditor
+                                  day={sd}
+                                  compact
+                                  onChange={(patch) =>
+                                    updateScheduleDay(sd.weekday, patch)
+                                  }
+                                />
                                 {copyFrom === sd.weekday ? (
                                   <div className="rounded-xl border border-hairline bg-surface-1 p-3">
                                     <div className="mb-2 text-xs font-semibold text-fg-2">
                                       Copy {WEEKDAY_LABELS[sd.weekday]} to…
                                     </div>
-                                    <div className="space-y-1">
-                                      {schedule.map((other) => {
-                                        if (other.weekday === sd.weekday) return null;
-                                        const on = copyTargets.has(other.weekday);
-                                        return (
-                                          <button
-                                            key={other.weekday}
-                                            onClick={() => {
-                                              setCopyTargets((prev) => {
-                                                const n = new Set(prev);
-                                                if (n.has(other.weekday)) n.delete(other.weekday);
-                                                else n.add(other.weekday);
-                                                return n;
-                                              });
-                                            }}
-                                            className="flex w-full items-center justify-between rounded-lg px-2 py-2 active:bg-surface-3"
-                                          >
-                                            <span className="flex items-center gap-3">
-                                              <span
-                                                className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${
-                                                  on
-                                                    ? "bg-brand-500 text-white"
-                                                    : "bg-surface-3 text-fg-2"
-                                                }`}
-                                              >
-                                                {SHORT_LABELS[other.weekday]}
-                                              </span>
-                                              <span className="text-sm font-medium">
-                                                {WEEKDAY_LABELS[other.weekday]}
-                                              </span>
-                                            </span>
-                                            <span
-                                              className={`flex h-5 w-5 items-center justify-center rounded-md border ${
-                                                on
-                                                  ? "border-brand-500 bg-brand-500 text-white"
-                                                  : "border-hairline"
-                                              }`}
-                                            >
-                                              {on && (
-                                                <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                                              )}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
+                                    <CopyDayPicker
+                                      days={schedule}
+                                      exclude={sd.weekday}
+                                      selected={copyTargets}
+                                      onToggle={(weekday) => {
+                                        setCopyTargets((prev) => {
+                                          const n = new Set(prev);
+                                          if (n.has(weekday)) n.delete(weekday);
+                                          else n.add(weekday);
+                                          return n;
+                                        });
+                                      }}
+                                      compact
+                                    />
                                     <div className="mt-3 flex gap-2">
                                       <button
                                         className="flex-1 rounded-lg bg-surface-3 py-2 text-xs font-semibold text-fg-2 active:bg-hairline"

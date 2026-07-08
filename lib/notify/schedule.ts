@@ -1,5 +1,5 @@
 import type { NotifPrefs, ScheduleDay } from "../db/schema";
-import { formatYmd } from "../date";
+import { formatYmd, parseHhmm } from "../date";
 
 export type NotifKind = "meal" | "weighIn" | "review";
 
@@ -99,12 +99,12 @@ function addDays(d: Date, n: number): Date {
 }
 
 function atTime(day: Date, hhmm: string): number {
-  const [h, m] = hhmm.split(":").map(Number);
+  const { h, m } = parseHhmm(hhmm);
   return new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m).getTime();
 }
 
 function fmt12h(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
+  const { h, m } = parseHhmm(hhmm);
   const am = h < 12;
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${String(m).padStart(2, "0")} ${am ? "AM" : "PM"}`;

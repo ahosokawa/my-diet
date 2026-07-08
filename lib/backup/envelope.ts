@@ -9,7 +9,9 @@ import type {
   WeightEntry,
 } from "@/lib/db/schema";
 
-export const SCHEMA_VERSION = 7;
+import { DB_SCHEMA_VERSION } from "@/lib/db/version";
+
+export const SCHEMA_VERSION = DB_SCHEMA_VERSION;
 export const BACKUP_FILENAME = "my-diet-backup.json";
 
 export type EnvelopeTables = {
@@ -76,8 +78,12 @@ export function parseEnvelope(json: string): ParseResult {
   }
   const tables = env.tables as Record<string, unknown>;
   for (const key of TABLE_KEYS) {
-    if (!Array.isArray(tables[key])) {
-      return { ok: false, reason: `Missing table: ${key}` };
+    // Tables added by later schema versions are absent from older backups —
+    // treat absent as empty, but still reject present-but-malformed values.
+    if (tables[key] === undefined) {
+      tables[key] = [];
+    } else if (!Array.isArray(tables[key])) {
+      return { ok: false, reason: `Malformed table: ${key}` };
     }
   }
   return { ok: true, env: env as Envelope };

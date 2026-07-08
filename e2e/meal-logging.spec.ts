@@ -171,4 +171,20 @@ test.describe("Meal logging", () => {
     const meal1 = logs.find((l) => l.date === TODAY && l.index === 0);
     expect(meal1?.items).toHaveLength(2);
   });
+
+  test("out-of-range meal index shows Meal not found instead of loading forever", async ({ page }) => {
+    await page.goto(`/meals?d=${TODAY}&i=9`);
+    await expect(page.getByText("Meal not found")).toBeVisible();
+    await page.getByRole("button", { name: "Back to day" }).click();
+    await expect(page).toHaveURL(/\/today/);
+  });
+
+  test("Back from a past day's meal returns to that day", async ({ page }) => {
+    const yesterday = "2026-04-18";
+    await page.goto(`/meals?d=${yesterday}&i=0`);
+    await expect(page.getByRole("button", { name: /Add food/ })).toBeVisible();
+    await page.getByRole("link", { name: "Back" }).click();
+    // trailingSlash: true → /today/?d=...
+    await expect(page).toHaveURL(new RegExp(`/today/?\\?d=${yesterday}`));
+  });
 });

@@ -52,7 +52,7 @@ export function flushBackupNow(): Promise<void> {
   return run(true);
 }
 
-async function readAllTables(): Promise<EnvelopeTables> {
+export async function readAllTables(): Promise<EnvelopeTables> {
   const [profile, targets, foods, schedule, mealLogs, weights, combos, prefs] = await Promise.all([
     db.profile.toArray(),
     db.targets.toArray(),

@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import type { EnvelopeTables } from "@/lib/backup/envelope";
+import { IDB_VERSION } from "@/lib/db/version";
 
 const STORES: (keyof EnvelopeTables)[] = [
   "profile",
@@ -12,20 +13,22 @@ const STORES: (keyof EnvelopeTables)[] = [
   "prefs",
 ];
 
-// Must match the highest `this.version(N)` block in `lib/db/schema.ts`,
-// multiplied by 10 — Dexie internally scales the user-facing version by 10
-// when opening the underlying IDB (see Dexie source: `Math.round(db.verno * 10)`).
-const SCHEMA_VERSION = 70;
-
-export async function seedEnvelope(page: Page, tables: EnvelopeTables): Promise<void> {
-  await page.goto("/");
+export async function seedEnvelope(
+  page: Page,
+  tables: EnvelopeTables,
+  // gotoPath is resolved against baseURL — the static-export config mounts the
+  // app under /my-diet/, where absolute "/" would escape the basePath.
+  opts: { gotoPath?: string } = {}
+): Promise<void> {
+  await page.goto(opts.gotoPath ?? "/");
 
   // Let the IndexPage's `router.replace()` redirect land and the app's
   // initial Dexie open complete before we touch IDB. Seeding mid-redirect
   // races Dexie's onupgradeneeded transaction and can yield a connection
   // whose objectStoreNames is incomplete.
+  const initialPath = new URL(page.url()).pathname;
   await page
-    .waitForFunction(() => window.location.pathname !== "/", null, { timeout: 5000 })
+    .waitForFunction((p) => window.location.pathname !== p, initialPath, { timeout: 5000 })
     .catch(() => {});
   await page.waitForLoadState("networkidle").catch(() => {});
 
@@ -102,7 +105,7 @@ export async function seedEnvelope(page: Page, tables: EnvelopeTables): Promise<
     {
       tables: tables as unknown as Record<string, unknown[]>,
       storeNames: STORES,
-      version: SCHEMA_VERSION,
+      version: IDB_VERSION,
     }
   );
 }

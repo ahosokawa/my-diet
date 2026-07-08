@@ -1,6 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import type { ActivityLevel, Sex } from "../nutrition/mifflin";
 import type { Goal } from "../nutrition/macros";
+import { DB_SCHEMA_VERSION } from "./version";
 
 export type { Goal };
 
@@ -172,3 +173,12 @@ class MyDietDb extends Dexie {
 }
 
 export const db = new MyDietDb();
+
+// lib/db/version.ts is the single source of truth for the schema version
+// (backup envelopes and raw-IDB e2e helpers import it). Adding a
+// `this.version(N)` block without bumping it must fail loudly.
+if (db.verno !== DB_SCHEMA_VERSION) {
+  throw new Error(
+    `DB_SCHEMA_VERSION (${DB_SCHEMA_VERSION}) in lib/db/version.ts is out of sync with the latest schema version (${db.verno}) in lib/db/schema.ts`
+  );
+}

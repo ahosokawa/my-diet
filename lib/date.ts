@@ -20,6 +20,11 @@ export function shiftDate(s: string, days: number): string {
   return formatYmd(d);
 }
 
+export function parseHhmm(hhmm: string): { h: number; m: number } {
+  const [h, m] = hhmm.split(":").map(Number);
+  return { h, m };
+}
+
 export function minutesToHhmm(min: number): string {
   const h = String(Math.floor(min / 60) % 24).padStart(2, "0");
   const m = String(min % 60).padStart(2, "0");

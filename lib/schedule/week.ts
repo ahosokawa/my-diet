@@ -1,4 +1,5 @@
 import type { ScheduleDay } from "../db/schema";
+import { parseHhmm } from "../date";
 
 export const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -50,6 +51,6 @@ export function postWorkoutMealIndex(day: ScheduleDay): number | null {
 }
 
 export function toMinutes(hhmm: string): number {
-  const [h, m] = hhmm.split(":").map(Number);
+  const { h, m } = parseHhmm(hhmm);
   return h * 60 + m;
 }

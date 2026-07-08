@@ -4,16 +4,14 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "@/components/Header";
 import { TabBar } from "@/components/TabBar";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Sheet } from "@/components/ui/Sheet";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { ChevronDown, ChevronUp, Dumbbell, Copy, Check } from "@/components/ui/Icon";
+import { DayScheduleEditor, CopyDayPicker } from "@/components/DayScheduleEditor";
 import { haptic } from "@/lib/ui/haptics";
 import { getSchedule, saveWholeSchedule } from "@/lib/db/repos";
 import type { ScheduleDay } from "@/lib/db/schema";
-import { WEEKDAY_LABELS, defaultMealTimes, copyTo, toMinutes } from "@/lib/schedule/week";
-import { minutesToHhmm } from "@/lib/date";
-
-const SHORT_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+import { WEEKDAY_LABELS, copyTo } from "@/lib/schedule/week";
 
 export default function SchedulePage() {
   const [days, setDays] = useState<ScheduleDay[]>([]);
@@ -38,15 +36,6 @@ export default function SchedulePage() {
   function updateDay(weekday: number, patch: Partial<ScheduleDay>) {
     const next = days.map((d) => (d.weekday === weekday ? { ...d, ...patch } : d));
     setDays(next);
-  }
-
-  function setMealCount(weekday: number, count: number) {
-    const day = days.find((d) => d.weekday === weekday);
-    const workoutEnd =
-      day?.workoutStart && day.workoutDurationMin
-        ? minutesToHhmm(toMinutes(day.workoutStart) + day.workoutDurationMin)
-        : undefined;
-    updateDay(weekday, { mealTimes: defaultMealTimes(count, workoutEnd) });
   }
 
   function startCopy(from: number) {
@@ -75,7 +64,21 @@ export default function SchedulePage() {
     await persist(days);
   }
 
-  if (days.length === 0) return null;
+  if (days.length === 0) {
+    return (
+      <>
+        <main className="flex-1 overflow-y-auto">
+          <Header title="Schedule" back="/today" />
+          <div className="space-y-2 px-4">
+            {Array.from({ length: 7 }, (_, i) => (
+              <Skeleton key={i} className="h-12" />
+            ))}
+          </div>
+        </main>
+        <TabBar />
+      </>
+    );
+  }
 
   return (
     <>
@@ -121,81 +124,10 @@ export default function SchedulePage() {
                         className="overflow-hidden"
                       >
                         <div className="space-y-4 border-t border-hairline px-4 py-4">
-                          <div>
-                            <label className="label">Meals per day</label>
-                            <SegmentedControl
-                              value={d.mealTimes.length}
-                              onChange={(v) => setMealCount(d.weekday, v)}
-                              options={[1, 2, 3, 4, 5, 6].map((n) => ({
-                                value: n,
-                                label: String(n),
-                              }))}
-                              ariaLabel="Meals per day"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="label">Meal times</label>
-                            <div className="space-y-1.5">
-                              {d.mealTimes.map((t, i) => (
-                                <input
-                                  key={i}
-                                  type="time"
-                                  className="input"
-                                  value={t}
-                                  onChange={(e) => {
-                                    const times = [...d.mealTimes];
-                                    times[i] = e.target.value;
-                                    updateDay(d.weekday, { mealTimes: times });
-                                  }}
-                                />
-                              ))}
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="label">Workout (optional)</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="time"
-                                className="input"
-                                placeholder="Start"
-                                value={d.workoutStart ?? ""}
-                                onChange={(e) =>
-                                  updateDay(d.weekday, {
-                                    workoutStart: e.target.value || undefined,
-                                  })
-                                }
-                              />
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                placeholder="min"
-                                className="input w-24"
-                                value={d.workoutDurationMin ?? ""}
-                                onChange={(e) =>
-                                  updateDay(d.weekday, {
-                                    workoutDurationMin: e.target.value
-                                      ? Number(e.target.value)
-                                      : undefined,
-                                  })
-                                }
-                              />
-                            </div>
-                            {d.workoutStart && (
-                              <button
-                                className="mt-2 text-xs font-medium text-red-500"
-                                onClick={() =>
-                                  updateDay(d.weekday, {
-                                    workoutStart: undefined,
-                                    workoutDurationMin: undefined,
-                                  })
-                                }
-                              >
-                                Remove workout
-                              </button>
-                            )}
-                          </div>
+                          <DayScheduleEditor
+                            day={d}
+                            onChange={(patch) => updateDay(d.weekday, patch)}
+                          />
 
                           <button
                             className="btn-secondary flex w-full items-center justify-center gap-2 text-sm"
@@ -258,43 +190,14 @@ export default function SchedulePage() {
           </div>
         }
       >
-        <div className="space-y-1">
-          {days.map((d) => {
-            if (d.weekday === copyFrom) return null;
-            const selected = copyTargets.has(d.weekday);
-            return (
-              <button
-                key={d.weekday}
-                onClick={() => toggleCopyTarget(d.weekday)}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-3 active:bg-surface-3"
-              >
-                <span className="flex items-center gap-3">
-                  <span
-                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                      selected
-                        ? "bg-brand-500 text-white"
-                        : "bg-surface-3 text-fg-2"
-                    }`}
-                  >
-                    {SHORT_LABELS[d.weekday]}
-                  </span>
-                  <span className="text-sm font-medium">
-                    {WEEKDAY_LABELS[d.weekday]}
-                  </span>
-                </span>
-                <span
-                  className={`flex h-6 w-6 items-center justify-center rounded-md border ${
-                    selected
-                      ? "border-brand-500 bg-brand-500 text-white"
-                      : "border-hairline"
-                  }`}
-                >
-                  {selected && <Check className="h-4 w-4" strokeWidth={3} />}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        {copyFrom !== null && (
+          <CopyDayPicker
+            days={days}
+            exclude={copyFrom}
+            selected={copyTargets}
+            onToggle={toggleCopyTarget}
+          />
+        )}
       </Sheet>
     </>
   );

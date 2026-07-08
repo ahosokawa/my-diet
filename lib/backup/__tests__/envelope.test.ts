@@ -57,9 +57,22 @@ describe("parseEnvelope", () => {
     if (!p.ok) expect(p.reason).toMatch(/tables/);
   });
 
-  it("rejects when a table is missing", () => {
+  it("treats an absent table as empty (pre-v4/v5 backups lack combos/prefs)", () => {
     const t = { ...EMPTY } as Partial<EnvelopeTables>;
-    delete t.foods;
+    delete t.combos;
+    delete t.prefs;
+    const p = parseEnvelope(
+      JSON.stringify({ schemaVersion: 3, exportedAt: 1, tables: t })
+    );
+    expect(p.ok).toBe(true);
+    if (p.ok) {
+      expect(p.env.tables.combos).toEqual([]);
+      expect(p.env.tables.prefs).toEqual([]);
+    }
+  });
+
+  it("rejects a present-but-malformed table", () => {
+    const t = { ...EMPTY, foods: "nope" } as unknown as EnvelopeTables;
     const p = parseEnvelope(
       JSON.stringify({ schemaVersion: 5, exportedAt: 1, tables: t })
     );

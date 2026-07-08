@@ -1,9 +1,39 @@
-const CACHE = "my-diet-v1";
+const CACHE = "my-diet-v2";
 const SCOPE = self.registration ? self.registration.scope : "./";
-const PRECACHE = [SCOPE, SCOPE + "manifest.webmanifest"];
+
+// Every route is a static trailingSlash export, so the whole app shell can be
+// precached — offline then works even for routes never visited online.
+const ROUTES = [
+  "",
+  "today/",
+  "meals/",
+  "intake/",
+  "schedule/",
+  "weight/",
+  "review/",
+  "settings/",
+];
+const PRECACHE = [...ROUTES.map((r) => SCOPE + r), SCOPE + "manifest.webmanifest"];
+
+// Only same-origin GETs matching these are ever cached, so storage stays
+// bounded: hashed _next/static assets turn over with each deploy (old caches
+// are deleted on activate via the CACHE name bump).
+function isCacheable(url) {
+  if (!url.pathname.startsWith(new URL(SCOPE).pathname)) return false;
+  return true;
+}
+
+function isImmutableAsset(url) {
+  return url.pathname.includes("/_next/static/");
+}
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).catch(() => {}));
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((c) => Promise.allSettled(PRECACHE.map((u) => c.add(u))))
+      .catch(() => {})
+  );
   self.skipWaiting();
 });
 
@@ -21,19 +51,40 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== location.origin) return;
+  if (!isCacheable(url)) return;
 
+  // Fingerprinted chunks never change under the same URL: cache-first.
+  if (isImmutableAsset(url)) {
+    event.respondWith(
+      (async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        const fresh = await fetch(request);
+        if (fresh.ok) {
+          const cache = await caches.open(CACHE);
+          cache.put(request, fresh.clone()).catch(() => {});
+        }
+        return fresh;
+      })()
+    );
+    return;
+  }
+
+  // HTML and everything else: network-first with cache fallback.
   event.respondWith(
     (async () => {
       try {
         const fresh = await fetch(request);
-        const cache = await caches.open(CACHE);
-        cache.put(request, fresh.clone()).catch(() => {});
+        if (fresh.ok) {
+          const cache = await caches.open(CACHE);
+          cache.put(request, fresh.clone()).catch(() => {});
+        }
         return fresh;
       } catch {
-        const cached = await caches.match(request);
+        const cached = await caches.match(request, { ignoreSearch: request.mode === "navigate" });
         if (cached) return cached;
         if (request.mode === "navigate") {
-          const shell = await caches.match(self.registration.scope);
+          const shell = await caches.match(SCOPE);
           if (shell) return shell;
         }
         return new Response("Offline", { status: 503 });

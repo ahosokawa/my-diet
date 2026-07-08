@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run lint` — ESLint (`eslint-config-next`)
 - `npm test` — Vitest once
 - `npm run test:watch` — Vitest watch mode
+- `npm run test:e2e` — Playwright against `next dev` (full suite, Chromium + WebKit)
+- `npm run test:e2e:static` — Playwright smoke against the production static export (run `npm run build` first; serves `out/` under `/my-diet` via `scripts/serve-out.mjs`)
 - Run a single test: `npx vitest run lib/nutrition/__tests__/solver.test.ts` (or pass `-t "<name>"` to filter by test name)
 
 ## Deployment / static export
@@ -27,16 +29,16 @@ This is a local-first PWA for macro tracking. There is no backend — all user d
 
 ### Data layer (`lib/db/`)
 
-- `schema.ts` — Dexie class `MyDietDb` with tables: `profile`, `targets`, `foods`, `schedule`, `mealLogs`, `weights`, `combos`. Schema is **versioned**: to change a schema, add a new `this.version(N).stores(...).upgrade(...)` block — never edit an existing version (existing user databases will be on older versions and upgrade through the chain).
+- `schema.ts` — Dexie class `MyDietDb` with tables: `profile`, `targets`, `foods`, `schedule`, `mealLogs`, `weights`, `combos`, `prefs`, `backup`. Schema is **versioned**: to change a schema, add a new `this.version(N).stores(...).upgrade(...)` block — never edit an existing version (existing user databases will be on older versions and upgrade through the chain). When you add a version block, also bump `DB_SCHEMA_VERSION` in `lib/db/version.ts` (the single source of truth used by backup envelopes and the raw-IDB e2e helpers — schema.ts throws at startup if they disagree) and add a matching default applier in `lib/db/defaults.ts` so restored backups normalize.
 - `repos.ts` — the only module UI should import. All reads/writes funnel through repo functions (`getProfile`, `logMeal`, `listFoods`, etc.) so the raw Dexie API stays encapsulated.
-- `seed-foods.json` is seeded by `seedFoodsIfEmpty()` on first launch; builtin foods have `builtin: 1` and should not be deleted.
-- `targets` is *append-only and versioned by `dateEffective`*. `getCurrentTargets()` returns the active row for today; pending future-dated targets can exist (see `hasPendingTargetChange`).
+- `seed-foods.json` is synced by `syncBuiltinFoods()` (on first launch and on `/today` mount — adds missing builtin slugs, never modifies existing rows); builtin foods have `builtin: 1` and should not be deleted.
+- `targets` is versioned by `dateEffective` (one row per date; re-saving the same date replaces it). `getTargetsForDate(date)` returns the row active on a given day; `getCurrentTargets()` is that for today. Pending future-dated targets can exist (see `hasPendingTargetChange`).
 
 ### Nutrition math (`lib/nutrition/`, pure functions, fully unit-tested)
 
 - `mifflin.ts` — Mifflin-St Jeor TDEE from sex/age/height/weight/activity.
 - `macros.ts` — Default macro targets: protein = 1.0 g/lb, fat = 0.45 g/lb, carbs fill remaining kcal. `KCAL = {protein: 4, fat: 9, carb: 4}`.
-- `distribute.ts` — Splits a daily `MacroTarget` across N meal slots. Protein/fat are even; carbs bias toward the post-workout slot (`postWorkoutCarbBias`, default 0.5).
+- `distribute.ts` — Splits a daily `MacroTarget` across N meal slots. Protein/fat are even; carbs bias toward the post-workout slot (`postWorkoutCarbBias`, default 0.5). Rounding uses largest-remainder so per-meal grams sum exactly to the daily target.
 - `solver.ts` — Projected gradient descent on a weighted least-squares objective (protein weighted highest, then carbs, then fat). Locked foods are subtracted from the target up front; only unlocked portions are iterated. Non-negativity enforced by clipping.
 
 The meal-detail UI is the main consumer: it calls `distributeMeals` to get a per-meal target, then `solvePortions` to auto-balance the unlocked foods in the current meal.
@@ -47,7 +49,7 @@ The meal-detail UI is the main consumer: it calls `distributeMeals` to get a per
 
 ### Review engine (`lib/review/engine.ts`)
 
-Weekly Friday check-in math (v1.1). Takes current/previous week weights and current targets, returns a `maintain | decrease | increase` verdict with a ±150 kcal adjustment when 7-day average weight moves more than 0.3%. The UI at `app/review/page.tsx` consumes this.
+Weekly Friday check-in math (v1.1). Takes current/previous week weights and current targets, returns a `maintain | decrease | increase` verdict with a ±150 kcal adjustment when 7-day average weight moves more than 0.3%. Weeks with fewer than `MIN_SAMPLES` (3) weigh-ins force `maintain` with `lowData: true`. The UI at `app/review/page.tsx` consumes this.
 
 ### Routes (App Router, all client components)
 
@@ -64,4 +66,4 @@ Shared UI lives in `components/` (Header, TabBar, MacroBar, GramsStepper).
 - Units are imperial everywhere user-facing (lb, in) and metric in the database where it matters (grams for food portions, per-100g macros).
 - Dates are stored as `YYYY-MM-DD` strings (not `Date`). Use `todayStr()` from `lib/db/repos.ts`.
 - Boolean-ish Dexie fields (`builtin`, `favorite`, `locked`) are stored as `0 | 1` to be indexable.
-- Tests live in `__tests__/` folders colocated next to the module under test. Vitest uses `environment: "node"` — DOM/Dexie are **not** available in tests; keep test targets to pure functions.
+- Tests live in `__tests__/` folders colocated next to the module under test (Vitest only picks up `lib/**/__tests__/**/*.test.ts`). Vitest uses `environment: "node"` — no DOM, so no component tests. Repo/Dexie functions are testable by putting `import "fake-indexeddb/auto"` as the *first* import (see `lib/db/__tests__/repos.test.ts`); everything else should stay pure functions.

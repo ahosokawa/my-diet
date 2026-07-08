@@ -6,6 +6,8 @@ const BASE_URL = `http://localhost:${PORT}`;
 export default defineConfig({
   testDir: "./e2e",
   testMatch: /.*\.spec\.ts$/,
+  // static-smoke runs against the production export via playwright.static.config.ts
+  testIgnore: /static-smoke\.spec\.ts$/,
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,

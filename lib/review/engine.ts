@@ -20,15 +20,35 @@ export type ReviewSuggestion = {
   // Flags when observed rate is outside the healthy band for the current goal.
   // For cut: true when losing faster than max (health guard) → raise kcal.
   rateFlag: "too_slow" | "in_band" | "too_fast" | null;
+  // True when either week has fewer than MIN_SAMPLES weigh-ins — the weekly
+  // averages are too noisy to act on, so the verdict is forced to "maintain".
+  lowData: boolean;
 };
 
 const ADJUSTMENT = 150;
+export const MIN_SAMPLES = 3;
 
 export function computeReview(input: ReviewInput): ReviewSuggestion {
   const avg = mean(input.currentWeek);
   const prev = mean(input.previousWeek);
   const deltaPct = prev > 0 ? (avg - prev) / prev : 0;
   const band = RATE_BANDS[input.goal];
+  const lowData =
+    input.currentWeek.length < MIN_SAMPLES ||
+    input.previousWeek.length < MIN_SAMPLES;
+
+  if (lowData) {
+    return {
+      verdict: "maintain",
+      kcalDelta: 0,
+      newTargets: { ...input.currentTargets },
+      avgWeight: round2(avg),
+      prevAvgWeight: round2(prev),
+      deltaPct: round4(deltaPct),
+      rateFlag: null,
+      lowData: true,
+    };
+  }
 
   let verdict: ReviewVerdict = "maintain";
   let kcalDelta = 0;
@@ -79,9 +99,14 @@ export function computeReview(input: ReviewInput): ReviewSuggestion {
     }
   }
 
-  const newKcal = Math.round(input.currentTargets.kcal + kcalDelta);
   const carbDelta = Math.round(kcalDelta / KCAL.carb);
   const newCarbG = Math.max(0, input.currentTargets.carbG + carbDelta);
+  const clamped = newCarbG !== input.currentTargets.carbG + carbDelta;
+  // When the carb floor bites, derive kcal from the carbs actually applied so
+  // kcal can't drift out of sync with the macros.
+  const newKcal = clamped
+    ? Math.round(input.currentTargets.kcal + (newCarbG - input.currentTargets.carbG) * KCAL.carb)
+    : Math.round(input.currentTargets.kcal + kcalDelta);
 
   return {
     verdict,
@@ -96,6 +121,7 @@ export function computeReview(input: ReviewInput): ReviewSuggestion {
     prevAvgWeight: round2(prev),
     deltaPct: round4(deltaPct),
     rateFlag,
+    lowData: false,
   };
 }
 

@@ -171,11 +171,15 @@ export function makeWeek2ReviewReady({ today, weightLb = 180, kcal = 2400 }: Rev
     source: "auto",
   };
 
+  // ≥3 weigh-ins per week — the review engine treats sparser weeks as
+  // low-data and refuses to adjust.
   const weights: WeightEntry[] = [
     { id: 1, date: shiftDate(today, -9), lbs: weightLb + 0.0 },
-    { id: 2, date: shiftDate(today, -7), lbs: weightLb + 0.2 },
-    { id: 3, date: shiftDate(today, -5), lbs: weightLb + 0.6 },
-    { id: 4, date: shiftDate(today, -2), lbs: weightLb + 1.0 },
+    { id: 2, date: shiftDate(today, -8), lbs: weightLb + 0.1 },
+    { id: 3, date: shiftDate(today, -7), lbs: weightLb + 0.2 },
+    { id: 4, date: shiftDate(today, -5), lbs: weightLb + 0.6 },
+    { id: 5, date: shiftDate(today, -3), lbs: weightLb + 0.8 },
+    { id: 6, date: shiftDate(today, -2), lbs: weightLb + 1.0 },
   ];
 
   const mealLogs: MealLog[] = [];

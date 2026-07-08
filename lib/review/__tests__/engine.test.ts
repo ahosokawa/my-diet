@@ -1,7 +1,61 @@
 import { describe, it, expect } from "vitest";
-import { computeReview } from "../engine";
+import { computeReview, MIN_SAMPLES } from "../engine";
 
 const targets = { kcal: 2500, proteinG: 180, fatG: 72, carbG: 283 };
+
+describe("computeReview — low-data guard", () => {
+  it("forces maintain when the current week has too few weigh-ins", () => {
+    const result = computeReview({
+      currentWeek: [184], // one noisy sample that would otherwise flip the verdict
+      previousWeek: [180, 180, 180, 180],
+      currentTargets: targets,
+      goal: "maintain",
+    });
+    expect(result.lowData).toBe(true);
+    expect(result.verdict).toBe("maintain");
+    expect(result.kcalDelta).toBe(0);
+    expect(result.newTargets).toEqual(targets);
+    expect(result.rateFlag).toBeNull();
+  });
+
+  it("forces maintain when the previous week has too few weigh-ins", () => {
+    const result = computeReview({
+      currentWeek: [180, 180, 180, 180],
+      previousWeek: Array(MIN_SAMPLES - 1).fill(184),
+      currentTargets: targets,
+      goal: "cut",
+    });
+    expect(result.lowData).toBe(true);
+    expect(result.verdict).toBe("maintain");
+  });
+
+  it("adjusts normally at exactly MIN_SAMPLES per week", () => {
+    const result = computeReview({
+      currentWeek: Array(MIN_SAMPLES).fill(183),
+      previousWeek: Array(MIN_SAMPLES).fill(180),
+      currentTargets: targets,
+      goal: "maintain",
+    });
+    expect(result.lowData).toBe(false);
+    expect(result.verdict).toBe("decrease");
+  });
+});
+
+describe("computeReview — carb floor clamp", () => {
+  it("keeps kcal in sync with macros when carbs clamp to 0", () => {
+    const lowCarb = { kcal: 1800, proteinG: 180, fatG: 104, carbG: 20 };
+    const result = computeReview({
+      currentWeek: [183, 183, 183, 183],
+      previousWeek: [180, 180, 180, 180],
+      currentTargets: lowCarb,
+      goal: "maintain",
+    });
+    expect(result.verdict).toBe("decrease");
+    expect(result.newTargets.carbG).toBe(0);
+    // kcal drops only by the carbs actually removed (20g × 4), not the full 150.
+    expect(result.newTargets.kcal).toBe(1800 - 20 * 4);
+  });
+});
 
 describe("computeReview — maintain goal", () => {
   it("maintains when weight is stable", () => {

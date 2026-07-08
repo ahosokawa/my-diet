@@ -30,6 +30,13 @@ test.describe("Weekly review — open window (Sun)", () => {
 
     const profile = await readTable(page, "profile");
     expect(profile[0].lastReviewedDate).toBe(SUNDAY);
+
+    // Past days keep the target that was in effect then; the new target
+    // applies from its effective date (next Monday) onward.
+    await page.goto(`/today?d=${SUNDAY}`);
+    await expect(page.locator("[data-macro-row]")).toHaveAttribute("data-kcal-target", "2400");
+    await page.goto(`/today?d=2026-04-20`);
+    await expect(page.locator("[data-macro-row]")).toHaveAttribute("data-kcal-target", "2250");
   });
 
   test("saves a custom override", async ({ page }) => {

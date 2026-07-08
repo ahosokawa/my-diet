@@ -17,9 +17,47 @@ import {
   type ReviewState,
 } from "@/lib/db/repos";
 import type { Profile, Targets, WeightEntry } from "@/lib/db/schema";
-import { computeReview, type ReviewSuggestion } from "@/lib/review/engine";
+import {
+  computeReview,
+  MIN_SAMPLES,
+  type ReviewSuggestion,
+  type ReviewVerdict,
+} from "@/lib/review/engine";
 import { KCAL, RATE_BANDS } from "@/lib/nutrition/macros";
 import { parseYmd, shiftDate, todayStr } from "@/lib/date";
+
+const VERDICT_META: Record<
+  ReviewVerdict,
+  { label: string; Icon: typeof Minus; tint: string; iconTint: string }
+> = {
+  maintain: {
+    label: "Hold steady",
+    Icon: Minus,
+    tint: "bg-surface-3 text-fg-1",
+    iconTint: "bg-surface-2 text-fg-2",
+  },
+  decrease: {
+    label: "Cut a bit",
+    Icon: TrendingDown,
+    tint: "bg-amber-50 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100",
+    iconTint: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+  },
+  increase: {
+    label: "Bump it up",
+    Icon: TrendingUp,
+    tint: "bg-brand-50 text-brand-900 dark:bg-brand-900/30 dark:text-brand-100",
+    iconTint: "bg-brand-100 text-brand-700 dark:bg-brand-900/50 dark:text-brand-300",
+  },
+};
+
+function verdictMeta(verdict: ReviewVerdict, source?: Targets["source"]) {
+  const base = VERDICT_META[verdict];
+  if (source === "stay" && verdict === "maintain")
+    return { ...base, label: "Staying the course" };
+  if (source === "override" && verdict !== "maintain")
+    return { ...base, label: "Custom target" };
+  return base;
+}
 
 function nextMonday(fromStr: string): string {
   const dow = parseYmd(fromStr).getDay();
@@ -248,26 +286,7 @@ export default function ReviewPage() {
         : pendKcal > targets.kcal
         ? "increase"
         : "decrease";
-    const meta = {
-      maintain: {
-        label: source === "stay" ? "Staying the course" : "Hold steady",
-        Icon: Minus,
-        tint: "bg-surface-3 text-fg-1",
-        iconTint: "bg-surface-2 text-fg-2",
-      },
-      decrease: {
-        label: source === "override" ? "Custom target" : "Cut a bit",
-        Icon: TrendingDown,
-        tint: "bg-amber-50 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100",
-        iconTint: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
-      },
-      increase: {
-        label: source === "override" ? "Custom target" : "Bump it up",
-        Icon: TrendingUp,
-        tint: "bg-brand-50 text-brand-900 dark:bg-brand-900/30 dark:text-brand-100",
-        iconTint: "bg-brand-100 text-brand-700 dark:bg-brand-900/50 dark:text-brand-300",
-      },
-    }[doneVerdict];
+    const meta = verdictMeta(doneVerdict, source);
     const DoneIcon = meta.Icon;
     return (
       <>
@@ -352,28 +371,8 @@ export default function ReviewPage() {
     );
   }
 
-  const verdictMeta = {
-    maintain: {
-      label: "Hold steady",
-      Icon: Minus,
-      tint: "bg-surface-3 text-fg-1",
-      iconTint: "bg-surface-2 text-fg-2",
-    },
-    decrease: {
-      label: "Cut a bit",
-      Icon: TrendingDown,
-      tint: "bg-amber-50 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100",
-      iconTint: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
-    },
-    increase: {
-      label: "Bump it up",
-      Icon: TrendingUp,
-      tint: "bg-brand-50 text-brand-900 dark:bg-brand-900/30 dark:text-brand-100",
-      iconTint: "bg-brand-100 text-brand-700 dark:bg-brand-900/50 dark:text-brand-300",
-    },
-  }[suggestion.verdict];
-
-  const VerdictIcon = verdictMeta.Icon;
+  const suggestionMeta = verdictMeta(suggestion.verdict);
+  const VerdictIcon = suggestionMeta.Icon;
   const deltaPctDisplay = (suggestion.deltaPct * 100).toFixed(2);
 
   return (
@@ -382,10 +381,10 @@ export default function ReviewPage() {
         <Header title="Weekly check-in" scrollRef={scrollRef} />
 
         <div className="px-4 pb-4">
-          <div className={`card mb-4 ${verdictMeta.tint}`}>
+          <div className={`card mb-4 ${suggestionMeta.tint}`}>
             <div className="flex items-start gap-3">
               <span
-                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${verdictMeta.iconTint}`}
+                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${suggestionMeta.iconTint}`}
               >
                 <VerdictIcon className="h-6 w-6" strokeWidth={2.5} />
               </span>
@@ -393,13 +392,24 @@ export default function ReviewPage() {
                 <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
                   Suggestion
                 </div>
-                <h2 className="text-2xl font-bold">{verdictMeta.label}</h2>
+                <h2 className="text-2xl font-bold">{suggestionMeta.label}</h2>
                 <p className="mt-1 text-sm opacity-90">
                   {reviewCopy(profile?.goal ?? "maintain", suggestion)}
                 </p>
               </div>
             </div>
           </div>
+
+          {suggestion.lowData && (
+            <div className="card mb-4 bg-amber-50 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100">
+              <p className="text-sm">
+                <span className="font-semibold">Not enough weigh-ins to adjust.</span>{" "}
+                Log at least {MIN_SAMPLES} weights each week for a reliable
+                trend — until then the safest call is to hold your current
+                targets.
+              </p>
+            </div>
+          )}
 
           <div className="card mb-4">
             <h2 className="mb-3 font-semibold">Weight trend</h2>
