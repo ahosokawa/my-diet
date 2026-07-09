@@ -97,6 +97,41 @@ test.describe("Meal logging", () => {
     ).toBeVisible();
   });
 
+  test("custom food form accepts decimal macros typed key-by-key", async ({ page }) => {
+    await page.getByRole("link", { name: /Meal 2/ }).click();
+    await page.getByRole("button", { name: /Add food/ }).click();
+
+    const picker = page.getByRole("dialog", { name: "Add food" });
+    await picker.getByPlaceholder("Search foods…").fill("grandma granola");
+    await picker
+      .getByRole("button", { name: /Add "grandma granola" as custom food/ })
+      .click();
+
+    const customDialog = page.getByRole("dialog", { name: "Add custom food" });
+    await expect(customDialog).toBeVisible();
+
+    await customDialog.getByLabel("Serving size").fill("100");
+    await customDialog.getByLabel("Calories per serving").fill("98");
+    await customDialog.getByLabel("Protein per serving").fill("3");
+    // pressSequentially (not fill) so each keystroke re-renders — the partial
+    // entry "4." must survive for the decimal to be enterable at all.
+    const fat = customDialog.getByLabel("Fat per serving");
+    await fat.pressSequentially("4.5");
+    await expect(fat).toHaveValue("4.5");
+    await customDialog.getByLabel("Carbs per serving").pressSequentially("7.5");
+
+    await customDialog.getByRole("button", { name: "Save" }).click();
+    await expect(customDialog).not.toBeVisible();
+
+    const foods = await readTable(page, "foods");
+    const saved = foods.find((f: { name?: string }) => f.name === "grandma granola") as
+      | { fatPer100: number; carbPer100: number }
+      | undefined;
+    expect(saved).toBeDefined();
+    expect(saved!.fatPer100).toBe(4.5);
+    expect(saved!.carbPer100).toBe(7.5);
+  });
+
   test("Balance lands unlocked portions within ~5g of target", async ({ page }) => {
     await page.getByRole("link", { name: /Meal 1/ }).click();
 

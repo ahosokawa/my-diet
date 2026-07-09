@@ -5,6 +5,7 @@ import { Header } from "@/components/Header";
 import { TabBar } from "@/components/TabBar";
 import { Toggle } from "@/components/ui/Toggle";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { DecimalInput } from "@/components/ui/DecimalInput";
 import { Bell, Dumbbell, User } from "@/components/ui/Icon";
 import { BackupSection } from "./BackupSection";
 import { haptic } from "@/lib/ui/haptics";
@@ -374,19 +375,15 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <label className="label">Weight (lb)</label>
-                      <input
-                        inputMode="decimal"
-                        aria-label="Weight pounds"
+                      <DecimalInput
+                        ariaLabel="Weight pounds"
                         className="input text-lg font-semibold tabular-nums"
                         value={profileDraft.weightLb}
-                        onChange={(e) =>
-                          setProfileDraft({
-                            ...profileDraft,
-                            weightLb:
-                              e.target.value === ""
-                                ? ""
-                                : Number(e.target.value),
-                          })
+                        onValueChange={(n) =>
+                          setProfileDraft({ ...profileDraft, weightLb: n })
+                        }
+                        onClear={() =>
+                          setProfileDraft({ ...profileDraft, weightLb: "" })
                         }
                       />
                     </div>
@@ -495,31 +492,23 @@ export default function SettingsPage() {
                   <div className="flex gap-3">
                     <div className="flex-1">
                       <label className="label">Protein g/lb</label>
-                      <input
-                        inputMode="decimal"
-                        aria-label="Protein per lb"
+                      <DecimalInput
+                        ariaLabel="Protein per lb"
                         className="input text-lg font-semibold tabular-nums"
                         value={goalDraft.proteinPerLb}
-                        onChange={(e) =>
-                          setGoalDraft({
-                            ...goalDraft,
-                            proteinPerLb: Number(e.target.value) || 0,
-                          })
+                        onValueChange={(n) =>
+                          setGoalDraft({ ...goalDraft, proteinPerLb: n })
                         }
                       />
                     </div>
                     <div className="flex-1">
                       <label className="label">Fat g/lb</label>
-                      <input
-                        inputMode="decimal"
-                        aria-label="Fat per lb"
+                      <DecimalInput
+                        ariaLabel="Fat per lb"
                         className="input text-lg font-semibold tabular-nums"
                         value={goalDraft.fatPerLb}
-                        onChange={(e) =>
-                          setGoalDraft({
-                            ...goalDraft,
-                            fatPerLb: Number(e.target.value) || 0,
-                          })
+                        onValueChange={(n) =>
+                          setGoalDraft({ ...goalDraft, fatPerLb: n })
                         }
                       />
                     </div>

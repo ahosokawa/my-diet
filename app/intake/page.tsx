@@ -20,6 +20,7 @@ import {
 } from "@/lib/db/repos";
 import type { ScheduleDay } from "@/lib/db/schema";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { DecimalInput } from "@/components/ui/DecimalInput";
 import { Check, Dumbbell, ChevronDown, ChevronUp, Copy } from "@/components/ui/Icon";
 import { haptic } from "@/lib/ui/haptics";
 import { WEEKDAY_LABELS, copyTo, defaultMealTimes } from "@/lib/schedule/week";
@@ -347,18 +348,13 @@ export default function IntakePage() {
             {step === 3 && (
               <>
                 <label className="label">Pounds</label>
-                <input
-                  inputMode="decimal"
+                <DecimalInput
                   autoFocus
-                  aria-label="Weight pounds"
+                  ariaLabel="Weight pounds"
                   className="input text-2xl font-semibold tabular-nums"
                   value={d.weightLb}
-                  onChange={(e) =>
-                    setD({
-                      ...d,
-                      weightLb: e.target.value === "" ? "" : Number(e.target.value),
-                    })
-                  }
+                  onValueChange={(n) => setD({ ...d, weightLb: n })}
+                  onClear={() => setD({ ...d, weightLb: "" })}
                 />
               </>
             )}
@@ -690,24 +686,20 @@ export default function IntakePage() {
                         <div className="flex gap-3">
                           <div className="flex-1">
                             <label className="label">Protein g/lb</label>
-                            <input
-                              inputMode="decimal"
+                            <DecimalInput
+                              ariaLabel="Protein per lb"
                               className="input text-lg font-semibold tabular-nums"
                               value={proteinPerLb}
-                              onChange={(e) =>
-                                setProteinPerLb(Number(e.target.value) || 0)
-                              }
+                              onValueChange={setProteinPerLb}
                             />
                           </div>
                           <div className="flex-1">
                             <label className="label">Fat g/lb</label>
-                            <input
-                              inputMode="decimal"
+                            <DecimalInput
+                              ariaLabel="Fat per lb"
                               className="input text-lg font-semibold tabular-nums"
                               value={fatPerLb}
-                              onChange={(e) =>
-                                setFatPerLb(Number(e.target.value) || 0)
-                              }
+                              onValueChange={setFatPerLb}
                             />
                           </div>
                         </div>

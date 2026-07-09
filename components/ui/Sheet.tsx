@@ -26,10 +26,19 @@ const DETENT_CLASS: Record<Detent, string> = {
 export function Sheet({ open, onClose, title, children, footer, detent = "large" }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Keep the latest onClose in a ref so the focus-management effect below only
+  // re-runs on open/close transitions. Inline onClose props change identity on
+  // every parent render; with onClose in the deps the cleanup would run per
+  // keystroke and yank focus out of whichever input is being typed into.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
       if (e.key === "Tab") {
         // Keep Tab cycling within the sheet while it's modal.
         const panel = panelRef.current;
@@ -68,7 +77,7 @@ export function Sheet({ open, onClose, title, children, footer, detent = "large"
       clearTimeout(focusTimer);
       opener?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   function onDragEnd(_: unknown, info: PanInfo) {
     if (info.offset.y > 80 || info.velocity.y > 500) onClose();

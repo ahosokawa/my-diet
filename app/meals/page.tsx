@@ -8,6 +8,7 @@ import { GramsStepper } from "@/components/GramsStepper";
 import { Sheet } from "@/components/ui/Sheet";
 import { IconButton } from "@/components/ui/IconButton";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { DECIMAL_RE } from "@/components/ui/DecimalInput";
 import { Lock, LockOpen, X, Plus, Sparkles, Star, Search, Trash2, Copy, Check } from "@/components/ui/Icon";
 import { haptic } from "@/lib/ui/haptics";
 import {
@@ -31,11 +32,13 @@ type Selection = { food: Food; grams: number; locked: boolean };
 
 type CustomDraft = {
   name: string;
-  servingSize: number | "";
-  kcalPerServing: number | "";
-  proteinPerServing: number | "";
-  fatPerServing: number | "";
-  carbPerServing: number | "";
+  // Numeric fields hold the raw input string so partial entries like "4."
+  // survive re-render; they're parsed on save.
+  servingSize: string;
+  kcalPerServing: string;
+  proteinPerServing: string;
+  fatPerServing: string;
+  carbPerServing: string;
   unit: "g" | "ml";
   category: string;
 };
@@ -171,24 +174,27 @@ function MealDetail() {
 
   async function saveCustomFood() {
     const size = Number(customDraft.servingSize);
+    const kcal = Number(customDraft.kcalPerServing);
+    const protein = Number(customDraft.proteinPerServing);
+    const fat = Number(customDraft.fatPerServing);
+    const carb = Number(customDraft.carbPerServing);
     if (
       !customDraft.name.trim() ||
-      !size ||
+      !customDraft.servingSize.trim() ||
+      !Number.isFinite(size) ||
       size <= 0 ||
-      customDraft.kcalPerServing === "" ||
-      customDraft.proteinPerServing === "" ||
-      customDraft.fatPerServing === "" ||
-      customDraft.carbPerServing === ""
+      [customDraft.kcalPerServing, customDraft.proteinPerServing, customDraft.fatPerServing, customDraft.carbPerServing].some((v) => !v.trim()) ||
+      [kcal, protein, fat, carb].some((n) => !Number.isFinite(n) || n < 0)
     )
       return;
     setSavingCustom(true);
     const factor = 100 / size;
     const id = await addCustomFood({
       name: customDraft.name.trim(),
-      kcalPer100: round1(Number(customDraft.kcalPerServing) * factor),
-      proteinPer100: round1(Number(customDraft.proteinPerServing) * factor),
-      fatPer100: round1(Number(customDraft.fatPerServing) * factor),
-      carbPer100: round1(Number(customDraft.carbPerServing) * factor),
+      kcalPer100: round1(kcal * factor),
+      proteinPer100: round1(protein * factor),
+      fatPer100: round1(fat * factor),
+      carbPer100: round1(carb * factor),
       unit: customDraft.unit,
       category: customDraft.category,
     });
@@ -617,13 +623,10 @@ function MealDetail() {
                 className="input pr-10"
                 placeholder="e.g. 28"
                 value={customDraft.servingSize}
-                onChange={(e) =>
-                  setCustomDraft({
-                    ...customDraft,
-                    servingSize:
-                      e.target.value === "" ? "" : Number(e.target.value),
-                  })
-                }
+                onChange={(e) => {
+                  if (DECIMAL_RE.test(e.target.value))
+                    setCustomDraft({ ...customDraft, servingSize: e.target.value });
+                }}
               />
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-fg-3">
                 {customDraft.unit}
@@ -643,13 +646,10 @@ function MealDetail() {
                   aria-label="Calories per serving"
                   className="input"
                   value={customDraft.kcalPerServing}
-                  onChange={(e) =>
-                    setCustomDraft({
-                      ...customDraft,
-                      kcalPerServing:
-                        e.target.value === "" ? "" : Number(e.target.value),
-                    })
-                  }
+                  onChange={(e) => {
+                    if (DECIMAL_RE.test(e.target.value))
+                      setCustomDraft({ ...customDraft, kcalPerServing: e.target.value });
+                  }}
                 />
               </div>
               <div>
@@ -659,13 +659,10 @@ function MealDetail() {
                   aria-label="Protein per serving"
                   className="input"
                   value={customDraft.proteinPerServing}
-                  onChange={(e) =>
-                    setCustomDraft({
-                      ...customDraft,
-                      proteinPerServing:
-                        e.target.value === "" ? "" : Number(e.target.value),
-                    })
-                  }
+                  onChange={(e) => {
+                    if (DECIMAL_RE.test(e.target.value))
+                      setCustomDraft({ ...customDraft, proteinPerServing: e.target.value });
+                  }}
                 />
               </div>
               <div>
@@ -675,13 +672,10 @@ function MealDetail() {
                   aria-label="Fat per serving"
                   className="input"
                   value={customDraft.fatPerServing}
-                  onChange={(e) =>
-                    setCustomDraft({
-                      ...customDraft,
-                      fatPerServing:
-                        e.target.value === "" ? "" : Number(e.target.value),
-                    })
-                  }
+                  onChange={(e) => {
+                    if (DECIMAL_RE.test(e.target.value))
+                      setCustomDraft({ ...customDraft, fatPerServing: e.target.value });
+                  }}
                 />
               </div>
               <div>
@@ -691,13 +685,10 @@ function MealDetail() {
                   aria-label="Carbs per serving"
                   className="input"
                   value={customDraft.carbPerServing}
-                  onChange={(e) =>
-                    setCustomDraft({
-                      ...customDraft,
-                      carbPerServing:
-                        e.target.value === "" ? "" : Number(e.target.value),
-                    })
-                  }
+                  onChange={(e) => {
+                    if (DECIMAL_RE.test(e.target.value))
+                      setCustomDraft({ ...customDraft, carbPerServing: e.target.value });
+                  }}
                 />
               </div>
             </div>
