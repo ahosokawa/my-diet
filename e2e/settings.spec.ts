@@ -42,7 +42,10 @@ test.describe("Settings", () => {
     await page.getByRole("button", { name: "Lose fat" }).click();
     await page.getByRole("button", { name: "Save goal" }).click();
 
-    await expect(page.getByText(/Lose fat/)).toBeVisible();
+    // Scope to the summary line (it carries the " · …P /lb" macro suffix) so
+    // this doesn't also match the goal-picker button while the edit form is
+    // mid-collapse — that race is a strict-mode violation on WebKit.
+    await expect(page.getByText(/Lose fat ·/)).toBeVisible();
 
     const profile = (await readTable(page, "profile"))[0];
     expect(profile.goal).toBe("cut");
