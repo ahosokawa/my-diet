@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState, useMemo, useCallback } from "react";
+import { Suspense, useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
 import { MacroRow } from "@/components/MacroBar";
@@ -11,8 +11,10 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { DECIMAL_RE } from "@/components/ui/DecimalInput";
 import { Lock, LockOpen, X, Plus, Sparkles, Star, Search, Trash2, Copy, Check } from "@/components/ui/Icon";
 import { haptic } from "@/lib/ui/haptics";
+import { createSaveQueue, type SaveQueue, type SyncState } from "@/lib/ui/save-queue";
 import {
   addCustomFood,
+  deleteMealLog,
   getMealLog,
   listFoods,
   logMeal,
@@ -22,13 +24,26 @@ import {
   toggleFavoriteFood,
   getFoodsByIds,
 } from "@/lib/db/repos";
-import type { Combo, Food } from "@/lib/db/schema";
+import type { Combo, Food, MealLogItem } from "@/lib/db/schema";
 import { getDayPlan } from "@/lib/plan/day-plan";
 import { solvePortions, macrosFor, type FoodMacros } from "@/lib/nutrition/solver";
 import { todayStr } from "@/lib/date";
 import { rankFoods } from "@/lib/ui/food-search";
 
 type Selection = { food: Food; grams: number; locked: boolean };
+
+// Autosave snapshots carry their own date/index: navigating between meals
+// re-uses the same component instance, so a pending write must target the
+// meal it was made on, not whichever meal is current when it lands.
+type MealSnapshot =
+  | {
+      kind: "put";
+      date: string;
+      index: number;
+      items: MealLogItem[];
+      totals: { kcal: number; proteinG: number; fatG: number; carbG: number };
+    }
+  | { kind: "delete"; date: string; index: number };
 
 type CustomDraft = {
   name: string;
@@ -68,17 +83,32 @@ function MealDetail() {
   const [combos, setCombos] = useState<Combo[]>([]);
   const [target, setTarget] = useState<{ kcal: number; proteinG: number; fatG: number; carbG: number } | null>(null);
   const [selected, setSelected] = useState<Selection[]>([]);
-  const [alreadyLogged, setAlreadyLogged] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState | null>(null);
   const [search, setSearch] = useState("");
   const [showPicker, setShowPicker] = useState(false);
   const [showCombos, setShowCombos] = useState(false);
   const [showSaveCombo, setShowSaveCombo] = useState(false);
   const [comboName, setComboName] = useState("");
-  const [saving, setSaving] = useState(false);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customDraft, setCustomDraft] = useState<CustomDraft>(EMPTY_CUSTOM);
   const [savingCustom, setSavingCustom] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const queueRef = useRef<SaveQueue<MealSnapshot> | null>(null);
+  if (!queueRef.current) {
+    queueRef.current = createSaveQueue<MealSnapshot>(
+      async (snap) => {
+        if (snap.kind === "delete") await deleteMealLog(snap.date, snap.index);
+        else await logMeal({ date: snap.date, index: snap.index, items: snap.items, ...snap.totals });
+      },
+      { delayMs: 600, onState: setSyncState }
+    );
+  }
+  const queue = queueRef.current;
+  // Set to the current `${date}:${mealIndex}` on the first autosave-effect run
+  // after hydration, so rehydrated state isn't immediately re-written.
+  const hydratedFor = useRef<string | null>(null);
+  const rebalanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function reload() {
     const [foods, cs] = await Promise.all([listFoods(), listCombos()]);
@@ -89,6 +119,9 @@ function MealDetail() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setSyncState(null);
+    // A pending write may still target the previous meal — land it first.
+    void queue.flush();
     (async () => {
       const [plan, foods, cs, log] = await Promise.all([
         getDayPlan(date),
@@ -111,18 +144,36 @@ function MealDetail() {
           .map((it) => {
             const f = byId.get(it.foodId);
             if (!f) return null;
-            return { food: f, grams: it.grams, locked: false };
+            return { food: f, grams: it.grams, locked: it.locked === 1 };
           })
           .filter((s): s is Selection => s !== null);
         setSelected(sel);
-        setAlreadyLogged(true);
+      } else {
+        setSelected([]);
       }
       setLoading(false);
     })();
     return () => {
       cancelled = true;
+      if (rebalanceTimer.current) clearTimeout(rebalanceTimer.current);
     };
-  }, [date, mealIndex]);
+  }, [date, mealIndex, queue]);
+
+  // Flush pending writes when the page is hidden or the component unmounts —
+  // the PWA can be killed without warning (mirrors lib/backup/scheduler.ts).
+  useEffect(() => {
+    const flush = () => void queue.flush();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+      flush();
+    };
+  }, [queue]);
 
   const filteredFoods = useMemo(() => {
     const q = search.trim();
@@ -135,25 +186,67 @@ function MealDetail() {
     [selected]
   );
 
-  const togglePickFood = useCallback((food: Food) => {
-    setSelected((prev) => {
-      const exists = prev.some((s) => s.food.id === food.id);
-      if (exists) return prev.filter((s) => s.food.id !== food.id);
-      return [...prev, { food, grams: 100, locked: false }];
-    });
-    haptic("light");
-  }, []);
+  const balance = useCallback(
+    (sel: Selection[]): Selection[] => {
+      if (!target || sel.length === 0) return sel;
+      const unlocked = sel.filter((s) => !s.locked);
+      if (unlocked.length === 0) return sel;
+      const foods: FoodMacros[] = sel.map((s) => ({
+        proteinPer100: s.food.proteinPer100,
+        fatPer100: s.food.fatPer100,
+        carbPer100: s.food.carbPer100,
+      }));
+      const result = solvePortions(
+        foods,
+        { proteinG: target.proteinG, fatG: target.fatG, carbG: target.carbG },
+        { locked: sel.map((s) => ({ grams: s.grams, locked: s.locked })) }
+      );
+      return sel.map((s, i) => ({ ...s, grams: result.grams[i] }));
+    },
+    [target]
+  );
 
-  const removeFood = useCallback((foodId: number) => {
-    setSelected((prev) => prev.filter((s) => s.food.id !== foodId));
-    haptic("light");
-  }, []);
+  const togglePickFood = useCallback(
+    (food: Food) => {
+      setSelected((prev) => {
+        const exists = prev.some((s) => s.food.id === food.id);
+        if (exists) return balance(prev.filter((s) => s.food.id !== food.id));
+        return balance([...prev, { food, grams: 100, locked: false }]);
+      });
+      haptic("light");
+    },
+    [balance]
+  );
 
-  const setGrams = useCallback((foodId: number, grams: number) => {
-    setSelected((prev) =>
-      prev.map((s) => (s.food.id === foodId ? { ...s, grams } : s))
-    );
-  }, []);
+  const removeFood = useCallback(
+    (foodId: number) => {
+      setSelected((prev) => balance(prev.filter((s) => s.food.id !== foodId)));
+      haptic("light");
+    },
+    [balance]
+  );
+
+  const setGrams = useCallback(
+    (foodId: number, grams: number) => {
+      // GramsStepper commits on every blur, even unchanged — don't let a
+      // mere focus/blur lock the food or trigger a rebalance.
+      const cur = selected.find((s) => s.food.id === foodId);
+      if (!cur || cur.grams === grams) return;
+      setSelected((prev) =>
+        prev.map((s) =>
+          s.food.id === foodId ? { ...s, grams, locked: true } : s
+        )
+      );
+      // The edited food is locked at its value synchronously; re-solving the
+      // other foods is debounced so stepper bursts don't make rows flicker.
+      if (rebalanceTimer.current) clearTimeout(rebalanceTimer.current);
+      rebalanceTimer.current = setTimeout(() => {
+        rebalanceTimer.current = null;
+        setSelected((prev) => balance(prev));
+      }, 350);
+    },
+    [balance, selected]
+  );
 
   const toggleLock = useCallback((foodId: number) => {
     setSelected((prev) =>
@@ -215,23 +308,6 @@ function MealDetail() {
     haptic("success");
   }
 
-  function balance(sel: Selection[]): Selection[] {
-    if (!target || sel.length === 0) return sel;
-    const unlocked = sel.filter((s) => !s.locked);
-    if (unlocked.length === 0) return sel;
-    const foods: FoodMacros[] = sel.map((s) => ({
-      proteinPer100: s.food.proteinPer100,
-      fatPer100: s.food.fatPer100,
-      carbPer100: s.food.carbPer100,
-    }));
-    const result = solvePortions(
-      foods,
-      { proteinG: target.proteinG, fatG: target.fatG, carbG: target.carbG },
-      { locked: sel.map((s) => ({ grams: s.grams, locked: s.locked })) }
-    );
-    return sel.map((s, i) => ({ ...s, grams: result.grams[i] }));
-  }
-
   function autoBalance() {
     setSelected((prev) => balance(prev));
     haptic("medium");
@@ -285,24 +361,42 @@ function MealDetail() {
     );
   }, [selected]);
 
-  async function handleLog() {
-    if (selected.length === 0) return;
-    setSaving(true);
-    const items = selected.map((s) => ({
-      foodId: s.food.id!,
-      grams: s.grams,
-    }));
-    await logMeal({
-      date,
-      index: mealIndex,
-      items,
-      kcal: actual.kcal,
-      proteinG: actual.proteinG,
-      fatG: actual.fatG,
-      carbG: actual.carbG,
-    });
+  // Live-sync: every change to the meal persists (debounced). A meal with
+  // foods is logged; removing the last food deletes the log row.
+  useEffect(() => {
+    if (loading || !target) return;
+    const key = `${date}:${mealIndex}`;
+    if (hydratedFor.current !== key) {
+      // First run after (re)hydration — state mirrors the DB, nothing to save.
+      hydratedFor.current = key;
+      return;
+    }
+    if (selected.length === 0) {
+      queue.push({ kind: "delete", date, index: mealIndex });
+    } else {
+      queue.push({
+        kind: "put",
+        date,
+        index: mealIndex,
+        items: selected.map((s) => ({
+          foodId: s.food.id!,
+          grams: s.grams,
+          locked: s.locked ? 1 : 0,
+        })),
+        totals: actual,
+      });
+    }
+  }, [selected, loading, target, date, mealIndex, actual, queue]);
+
+  async function handleDone() {
+    await queue.flush();
     haptic("success");
-    router.push(date === todayStr() ? "/today" : `/today?d=${date}`);
+    router.push(backHref);
+  }
+
+  function clearMeal() {
+    setSelected([]);
+    haptic("medium");
   }
 
   const backHref = date === todayStr() ? "/today" : `/today?d=${date}`;
@@ -360,6 +454,12 @@ function MealDetail() {
                     onClick={() => setShowSaveCombo(true)}
                   >
                     <Copy className="h-4 w-4" /> Save
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-red-600 active:bg-surface-3 dark:text-red-400"
+                    onClick={clearMeal}
+                  >
+                    <Trash2 className="h-4 w-4" /> Clear
                   </button>
                 </div>
               </div>
@@ -444,15 +544,21 @@ function MealDetail() {
             </button>
           )}
         </div>
-        {selected.length > 0 && (
-          <button
-            className="btn-primary mt-2 w-full"
-            disabled={saving}
-            onClick={handleLog}
-          >
-            {saving ? "Saving…" : alreadyLogged ? "Update meal" : "Log meal"}
-          </button>
-        )}
+        <button className="btn-primary mt-2 w-full" onClick={handleDone}>
+          Done
+        </button>
+        <div
+          data-sync-state={syncState ?? "idle"}
+          className="mt-1 flex h-4 items-center justify-center gap-1 text-[11px] font-medium text-fg-3"
+          aria-live="polite"
+        >
+          {syncState === "saved" && (
+            <>
+              <Check className="h-3 w-3" /> Saved
+            </>
+          )}
+          {(syncState === "dirty" || syncState === "saving") && "Saving…"}
+        </div>
       </div>
 
       <Sheet

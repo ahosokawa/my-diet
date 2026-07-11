@@ -61,7 +61,9 @@ export type ScheduleDay = {
   workoutDurationMin?: number;
 };
 
-export type MealLogItem = { foodId: number; grams: number };
+// `locked` is a non-indexed nested field: adding it needs no Dexie version
+// block or backup-schema bump. Missing means unlocked.
+export type MealLogItem = { foodId: number; grams: number; locked?: 0 | 1 };
 
 export type MealLog = {
   id?: number;

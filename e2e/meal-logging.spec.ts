@@ -16,6 +16,15 @@ async function addFoodFromPicker(page: Page, query: string, nameRegex: RegExp) {
   await expect(picker).not.toBeVisible();
 }
 
+// The meal autosaves on a debounce; wait for the sync indicator before
+// reading IndexedDB or navigating.
+async function waitSaved(page: Page) {
+  await expect(page.locator("[data-sync-state]")).toHaveAttribute(
+    "data-sync-state",
+    "saved"
+  );
+}
+
 async function readMacro(row: Locator, macro: "protein" | "fat" | "carbs") {
   const bar = row.locator(`[data-macro="${macro}"]`);
   await expect(bar).toBeVisible();
@@ -33,7 +42,7 @@ test.describe("Meal logging", () => {
     await expect(page.getByText("Daily totals")).toBeVisible();
   });
 
-  test("logs a meal via search and balance; daily totals reflect it", async ({ page }) => {
+  test("adding a food auto-balances and auto-logs; daily totals reflect it", async ({ page }) => {
     await page.getByRole("link", { name: /Meal 1/ }).click();
     await expect(page).toHaveURL(/\/meals/);
 
@@ -41,8 +50,8 @@ test.describe("Meal logging", () => {
 
     await expect(page.getByText(/Chicken breast \(cooked\)/)).toBeVisible();
 
-    await page.getByRole("button", { name: "Balance" }).click();
-    await page.getByRole("button", { name: "Log meal" }).click();
+    await waitSaved(page);
+    await page.getByRole("button", { name: "Done" }).click();
 
     await expect(page).toHaveURL(/\/today/);
     await expect(page.getByText("1 / 3 logged")).toBeVisible();
@@ -82,7 +91,8 @@ test.describe("Meal logging", () => {
     await expect(picker).not.toBeVisible();
 
     await expect(page.getByText(/homemade shake/)).toBeVisible();
-    await page.getByRole("button", { name: "Log meal" }).click();
+    await waitSaved(page);
+    await page.getByRole("button", { name: "Done" }).click();
 
     await expect(page).toHaveURL(/\/today/);
     await expect(page.getByText("1 / 3 logged")).toBeVisible();
@@ -132,15 +142,18 @@ test.describe("Meal logging", () => {
     expect(saved!.carbPer100).toBe(7.5);
   });
 
-  test("Balance lands unlocked portions within ~5g of target", async ({ page }) => {
+  test("auto-balance lands unlocked portions within ~5g of target", async ({ page }) => {
     await page.getByRole("link", { name: /Meal 1/ }).click();
 
-    // Pick three foods that span the three macros.
+    // Pick three foods that span the three macros — no Balance tap needed,
+    // every add re-solves the meal.
     await addFoodFromPicker(page, "chicken breast cooked", /^Chicken breast \(cooked\)/);
     await addFoodFromPicker(page, "white rice", /^White rice \(cooked\)/);
     await addFoodFromPicker(page, "avocado", /^Avocado/);
 
-    await page.getByRole("button", { name: "Balance" }).click();
+    // "saved" implies the final auto-balance render has committed — the
+    // macro attributes below are read one-shot, without retry.
+    await waitSaved(page);
 
     const targetCard = page.locator("[data-macro-row]");
     for (const macro of ["protein", "fat", "carbs"] as const) {
@@ -152,59 +165,100 @@ test.describe("Meal logging", () => {
     }
   });
 
-  test("locked food keeps its grams after Balance", async ({ page }) => {
+  test("editing grams auto-locks the food and rebalances the rest", async ({ page }) => {
     await page.getByRole("link", { name: /Meal 1/ }).click();
 
     await addFoodFromPicker(page, "chicken breast cooked", /^Chicken breast \(cooked\)/);
     await addFoodFromPicker(page, "white rice", /^White rice \(cooked\)/);
 
     const chickenRow = page.locator('[data-food-row][data-food-name="Chicken breast (cooked)"]');
-    const riceRow = page.locator('[data-food-row][data-food-name="White rice (cooked)"]');
 
-    // Set chicken to 150g (press Enter to commit without a separate blur step), then lock.
+    // Set chicken to 150g (press Enter to commit without a separate blur step).
     const chickenGrams = chickenRow.getByLabel("Grams");
     await chickenGrams.fill("150");
     await chickenGrams.press("Enter");
-    await expect(chickenGrams).toHaveValue("150");
-    await chickenRow.getByRole("button", { name: /Lock|Locked/ }).click();
+
+    // The edit auto-locks the food; the debounced rebalance of the other
+    // foods must not touch it.
     await expect(chickenRow.getByRole("button", { name: "Locked" })).toBeVisible();
+    await expect(chickenGrams).toHaveValue("150");
 
-    // Rice starts at the default 100g. Balance should move it to hit the carbs target
-    // (meal 1 protein/fat is already near-exceeded by 150g chicken → solver maxes carbs).
-    await expect(riceRow.getByLabel("Grams")).toHaveValue("100");
+    // Poll the DB rather than the sync indicator: the indicator may still
+    // read "saved" from the previous write when this save is still pending.
+    await expect
+      .poll(async () => {
+        const logs = await readTable(page, "mealLogs");
+        const meal1 = logs.find((l) => l.date === TODAY && l.index === 0);
+        return meal1?.items.find((it) => it.grams === 150)?.locked;
+      })
+      .toBe(1);
+    await expect(chickenGrams).toHaveValue("150");
+
+    // Unlock and Balance: the solver is free to move chicken again.
+    await chickenRow.getByRole("button", { name: "Locked" }).click();
     await page.getByRole("button", { name: "Balance" }).click();
-
-    // Chicken stays at 150 (locked); rice moved somewhere other than 100.
-    await expect(chickenRow.getByLabel("Grams")).toHaveValue("150");
-    await expect(riceRow.getByLabel("Grams")).not.toHaveValue("100");
+    await expect(chickenGrams).not.toHaveValue("150");
   });
 
-  test("re-opening a logged meal shows Update meal and persists changes", async ({ page }) => {
-    // Log Meal 1 with chicken.
+  test("re-opening a logged meal restores it and live-syncs changes", async ({ page }) => {
+    // Build Meal 1 with chicken — it logs itself.
     await page.getByRole("link", { name: /Meal 1/ }).click();
     await addFoodFromPicker(page, "chicken breast cooked", /^Chicken breast \(cooked\)/);
-    await page.getByRole("button", { name: "Log meal" }).click();
+    await waitSaved(page);
+    let logs = await readTable(page, "mealLogs");
+    expect(logs).toHaveLength(1);
+
+    await page.getByRole("button", { name: "Done" }).click();
     await expect(page).toHaveURL(/\/today/);
     await expect(page.getByText("1 / 3 logged")).toBeVisible();
 
-    // Re-enter Meal 1 — should be in "update" mode with chicken pre-populated.
+    // Re-enter Meal 1 — chicken pre-populated; adding rice syncs without any
+    // explicit save action.
     await page.getByRole("link", { name: /Meal 1/ }).click();
     await expect(
       page.locator('[data-food-row][data-food-name="Chicken breast (cooked)"]')
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Update meal" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Log meal" })).not.toBeVisible();
-
-    // Add rice and persist.
     await addFoodFromPicker(page, "white rice", /^White rice \(cooked\)/);
-    await page.getByRole("button", { name: "Update meal" }).click();
-    await expect(page).toHaveURL(/\/today/);
+    await waitSaved(page);
 
-    // Still 1/3 logged, but the single log now holds two items.
-    await expect(page.getByText("1 / 3 logged")).toBeVisible();
-    const logs = await readTable(page, "mealLogs");
+    logs = await readTable(page, "mealLogs");
     const meal1 = logs.find((l) => l.date === TODAY && l.index === 0);
     expect(meal1?.items).toHaveLength(2);
+    // Rice was solver-placed, not user-measured — it must not be locked.
+    expect(meal1?.items.every((it) => it.locked === 0)).toBe(true);
+  });
+
+  test("Clear removes the meal from the log", async ({ page }) => {
+    await page.getByRole("link", { name: /Meal 1/ }).click();
+    await addFoodFromPicker(page, "chicken breast cooked", /^Chicken breast \(cooked\)/);
+    await waitSaved(page);
+    expect(await readTable(page, "mealLogs")).toHaveLength(1);
+
+    await page.getByRole("button", { name: "Clear" }).click();
+    await expect.poll(async () => (await readTable(page, "mealLogs")).length).toBe(0);
+
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(page.getByText("0 / 3 logged")).toBeVisible();
+  });
+
+  test("removing the last food deletes the log row", async ({ page }) => {
+    await page.getByRole("link", { name: /Meal 1/ }).click();
+    await addFoodFromPicker(page, "chicken breast cooked", /^Chicken breast \(cooked\)/);
+    await waitSaved(page);
+    expect(await readTable(page, "mealLogs")).toHaveLength(1);
+
+    await page.getByRole("button", { name: "Remove" }).click();
+    await expect.poll(async () => (await readTable(page, "mealLogs")).length).toBe(0);
+  });
+
+  test("navigating Back right after a change still persists it", async ({ page }) => {
+    await page.getByRole("link", { name: /Meal 1/ }).click();
+    await addFoodFromPicker(page, "chicken breast cooked", /^Chicken breast \(cooked\)/);
+
+    // Leave before the autosave debounce fires — the flush-on-exit must land it.
+    await page.getByRole("link", { name: "Back" }).click();
+    await expect(page).toHaveURL(/\/today/);
+    await expect.poll(async () => (await readTable(page, "mealLogs")).length).toBe(1);
   });
 
   test("out-of-range meal index shows Meal not found instead of loading forever", async ({ page }) => {

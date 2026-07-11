@@ -196,6 +196,10 @@ export async function getMealLog(date: string, index: number): Promise<MealLog |
   return db.mealLogs.where("[date+index]").equals([date, index]).first();
 }
 
+export async function deleteMealLog(date: string, index: number): Promise<void> {
+  await db.mealLogs.where("[date+index]").equals([date, index]).delete();
+}
+
 export async function addWeight(w: Omit<WeightEntry, "id">): Promise<void> {
   await db.weights.put(w);
 }

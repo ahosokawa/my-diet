@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../schema";
 import {
+  deleteMealLog,
   getCurrentTargets,
   getProfile,
   getTargetsForDate,
@@ -110,6 +111,48 @@ describe("logMeal", () => {
     await logMeal(entry);
     await logMeal({ ...entry, index: 1 });
     expect(await db.mealLogs.count()).toBe(2);
+  });
+
+  it("round-trips locked flags on items", async () => {
+    await logMeal({
+      ...entry,
+      items: [
+        { foodId: 1, grams: 150, locked: 1 },
+        { foodId: 2, grams: 80, locked: 0 },
+      ],
+    });
+    const row = await db.mealLogs.where("[date+index]").equals(["2026-07-08", 0]).first();
+    expect(row?.items).toEqual([
+      { foodId: 1, grams: 150, locked: 1 },
+      { foodId: 2, grams: 80, locked: 0 },
+    ]);
+  });
+});
+
+describe("deleteMealLog", () => {
+  const entry = {
+    date: "2026-07-08",
+    index: 0,
+    items: [{ foodId: 1, grams: 150 }],
+    kcal: 250,
+    proteinG: 45,
+    fatG: 5,
+    carbG: 2,
+  };
+
+  it("deletes only the [date+index] row", async () => {
+    await logMeal(entry);
+    await logMeal({ ...entry, index: 1 });
+    await deleteMealLog("2026-07-08", 0);
+    const rows = await db.mealLogs.toArray();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].index).toBe(1);
+  });
+
+  it("is a no-op when the row does not exist", async () => {
+    await logMeal(entry);
+    await deleteMealLog("2026-07-08", 5);
+    expect(await db.mealLogs.count()).toBe(1);
   });
 });
 
