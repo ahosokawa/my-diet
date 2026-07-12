@@ -3,6 +3,7 @@ import seedFoods from "./seed-foods.json";
 import { todayStr } from "@/lib/date";
 import { defaultMealTimes } from "@/lib/schedule/week";
 import { isReviewWindowOpen, wasReviewedThisWeek } from "@/lib/review/window";
+import { hasReviewData, splitWeights } from "@/lib/review/engine";
 
 export { todayStr };
 
@@ -76,6 +77,9 @@ export type ReviewState = {
   eligible: boolean;
   windowOpen: boolean;
   doneThisWeek: boolean;
+  // False when either weekly window has zero weigh-ins — the review page
+  // can't compute a suggestion, so entry points should not advertise one.
+  hasWeightData: boolean;
   lastReviewedDate?: string;
   pendingTargets?: Targets;
   daysUntilEligible: number;
@@ -91,10 +95,12 @@ export async function getReviewState(today: string): Promise<ReviewState> {
       )
     : 7;
   const pending = await getPendingTargets();
+  const { current, previous } = splitWeights(await listWeights(30), today);
   return {
     eligible,
     windowOpen: isReviewWindowOpen(today),
     doneThisWeek: wasReviewedThisWeek(p?.lastReviewedDate, today),
+    hasWeightData: hasReviewData(current, previous),
     lastReviewedDate: p?.lastReviewedDate,
     pendingTargets: pending,
     daysUntilEligible,

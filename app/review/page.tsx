@@ -19,6 +19,7 @@ import {
 import type { Profile, Targets, WeightEntry } from "@/lib/db/schema";
 import {
   computeReview,
+  splitWeights,
   MIN_SAMPLES,
   type ReviewSuggestion,
   type ReviewVerdict,
@@ -77,26 +78,6 @@ function formatLongDate(s: string): string {
     month: "short",
     day: "numeric",
   });
-}
-
-function splitWeights(
-  entries: WeightEntry[],
-  today: string
-): { current: number[]; previous: number[] } {
-  const byDate = new Map(entries.map((e) => [e.date, e.lbs]));
-  const current: number[] = [];
-  const previous: number[] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = shiftDate(today, -i);
-    const lbs = byDate.get(d);
-    if (lbs !== undefined) current.push(lbs);
-  }
-  for (let i = 7; i < 14; i++) {
-    const d = shiftDate(today, -i);
-    const lbs = byDate.get(d);
-    if (lbs !== undefined) previous.push(lbs);
-  }
-  return { current, previous };
 }
 
 function reviewCopy(

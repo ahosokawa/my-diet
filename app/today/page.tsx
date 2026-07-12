@@ -86,7 +86,10 @@ function TodayView() {
     (async () => {
       const state = await getReviewState(todayStr());
       setReviewPending(
-        state.eligible && state.windowOpen && !state.doneThisWeek
+        state.eligible &&
+          state.windowOpen &&
+          state.hasWeightData &&
+          !state.doneThisWeek
       );
     })();
   }, [date]);

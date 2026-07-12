@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeReview, MIN_SAMPLES } from "../engine";
+import { computeReview, hasReviewData, splitWeights, MIN_SAMPLES } from "../engine";
 
 const targets = { kcal: 2500, proteinG: 180, fatG: 72, carbG: 283 };
 
@@ -187,5 +187,40 @@ describe("computeReview — bulk goal", () => {
     expect(result.verdict).toBe("decrease");
     expect(result.rateFlag).toBe("too_fast");
     expect(result.kcalDelta).toBe(-150);
+  });
+});
+
+describe("splitWeights", () => {
+  const today = "2026-07-10"; // a Friday
+
+  it("buckets entries into current (0–6 days back) and previous (7–13) weeks", () => {
+    const entries = [
+      { date: "2026-07-10", lbs: 180 }, // today → current
+      { date: "2026-07-04", lbs: 181 }, // 6 days back → current
+      { date: "2026-07-03", lbs: 182 }, // 7 days back → previous
+      { date: "2026-06-27", lbs: 183 }, // 13 days back → previous
+    ];
+    const { current, previous } = splitWeights(entries, today);
+    expect(current).toEqual([180, 181]);
+    expect(previous).toEqual([182, 183]);
+  });
+
+  it("ignores entries older than 14 days or in the future", () => {
+    const entries = [
+      { date: "2026-06-26", lbs: 179 }, // 14 days back
+      { date: "2026-07-11", lbs: 185 }, // tomorrow
+    ];
+    const { current, previous } = splitWeights(entries, today);
+    expect(current).toEqual([]);
+    expect(previous).toEqual([]);
+  });
+});
+
+describe("hasReviewData", () => {
+  it("requires at least one weigh-in in each week", () => {
+    expect(hasReviewData([180], [181])).toBe(true);
+    expect(hasReviewData([], [181])).toBe(false);
+    expect(hasReviewData([180], [])).toBe(false);
+    expect(hasReviewData([], [])).toBe(false);
   });
 });

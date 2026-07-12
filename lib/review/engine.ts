@@ -1,5 +1,7 @@
 import type { Goal, MacroTarget } from "../nutrition/macros";
 import { KCAL, RATE_BANDS } from "../nutrition/macros";
+import type { WeightEntry } from "../db/schema";
+import { shiftDate } from "../date";
 
 export type ReviewInput = {
   currentWeek: number[];
@@ -27,6 +29,33 @@ export type ReviewSuggestion = {
 
 const ADJUSTMENT = 150;
 export const MIN_SAMPLES = 3;
+
+// Buckets recent weigh-ins into the current week (today back 6 days) and the
+// previous week (7–13 days back). Entries outside 14 days are ignored.
+export function splitWeights(
+  entries: WeightEntry[],
+  today: string
+): { current: number[]; previous: number[] } {
+  const byDate = new Map(entries.map((e) => [e.date, e.lbs]));
+  const current: number[] = [];
+  const previous: number[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = shiftDate(today, -i);
+    const lbs = byDate.get(d);
+    if (lbs !== undefined) current.push(lbs);
+  }
+  for (let i = 7; i < 14; i++) {
+    const d = shiftDate(today, -i);
+    const lbs = byDate.get(d);
+    if (lbs !== undefined) previous.push(lbs);
+  }
+  return { current, previous };
+}
+
+// The minimum data computeReview needs: at least one weigh-in in each week.
+export function hasReviewData(current: number[], previous: number[]): boolean {
+  return current.length > 0 && previous.length > 0;
+}
 
 export function computeReview(input: ReviewInput): ReviewSuggestion {
   const avg = mean(input.currentWeek);

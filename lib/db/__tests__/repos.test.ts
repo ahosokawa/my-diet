@@ -2,9 +2,11 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../schema";
 import {
+  addWeight,
   deleteMealLog,
   getCurrentTargets,
   getProfile,
+  getReviewState,
   getTargetsForDate,
   listFoods,
   logMeal,
@@ -193,5 +195,39 @@ describe("syncBuiltinFoods", () => {
     });
     await syncBuiltinFoods();
     expect(await db.foods.count()).toBe(seedFoods.length + 1);
+  });
+});
+
+describe("getReviewState — hasWeightData", () => {
+  const today = "2026-07-10";
+
+  beforeEach(async () => {
+    // 14+ days old so the time-based eligibility check passes.
+    await saveProfile({
+      ...baseProfile,
+      createdAt: Date.now() - 15 * 24 * 60 * 60 * 1000,
+    });
+  });
+
+  it("is false with no weigh-ins at all", async () => {
+    const state = await getReviewState(today);
+    expect(state.eligible).toBe(true);
+    expect(state.hasWeightData).toBe(false);
+  });
+
+  it("is false with weigh-ins in only the current week", async () => {
+    await addWeight({ date: "2026-07-09", lbs: 180 });
+    expect((await getReviewState(today)).hasWeightData).toBe(false);
+  });
+
+  it("is false with weigh-ins in only the previous week", async () => {
+    await addWeight({ date: "2026-07-01", lbs: 181 });
+    expect((await getReviewState(today)).hasWeightData).toBe(false);
+  });
+
+  it("is true with at least one weigh-in in each week", async () => {
+    await addWeight({ date: "2026-07-09", lbs: 180 });
+    await addWeight({ date: "2026-07-01", lbs: 181 });
+    expect((await getReviewState(today)).hasWeightData).toBe(true);
   });
 });
