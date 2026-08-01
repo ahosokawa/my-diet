@@ -13,6 +13,7 @@ import {
 } from "@/lib/db/repos";
 import type { Profile, WeightEntry } from "@/lib/db/schema";
 import { RATE_BANDS } from "@/lib/nutrition/macros";
+import { goalAnchorWeightLb } from "@/lib/weight/trend";
 import { MAINTAIN_DRIFT } from "./WeightChart";
 import { haptic } from "@/lib/ui/haptics";
 import { SwipeRow } from "@/components/ui/SwipeRow";
@@ -46,11 +47,7 @@ export default function WeightPage() {
 
   const goalStartWeightLb = useMemo(() => {
     if (!profile) return undefined;
-    // Earliest entry on or after goalStartDate → best anchor for the corridor.
-    const startAnchored = [...entries]
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .find((e) => e.date >= profile.goalStartDate);
-    return startAnchored?.lbs ?? profile.weightLb;
+    return goalAnchorWeightLb(entries, profile.goalStartDate) ?? profile.weightLb;
   }, [entries, profile]);
 
   useEffect(() => {
