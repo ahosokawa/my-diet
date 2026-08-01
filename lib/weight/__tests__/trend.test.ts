@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { goalAnchorWeightLb, trailingAvg } from "../trend";
+import { bandStatus, goalAnchorWeightLb, rangeStartDate, trailingAvg } from "../trend";
 import type { WeightEntry } from "../../db/schema";
 
 function e(date: string, lbs: number): WeightEntry {
@@ -27,6 +27,37 @@ describe("trailingAvg", () => {
 
   it("returns undefined when the window is empty", () => {
     expect(trailingAvg([e("2026-07-01", 180)], "2026-07-13")).toBeUndefined();
+  });
+});
+
+describe("rangeStartDate", () => {
+  it("starts the goal range at goal start", () => {
+    expect(rangeStartDate("goal", "2026-08-01", "2026-07-13")).toBe("2026-07-13");
+  });
+
+  it("starts the 3m range 90 days back", () => {
+    expect(rangeStartDate("3m", "2026-08-01", "2026-07-13")).toBe("2026-05-03");
+  });
+
+  it("has no left edge for all", () => {
+    expect(rangeStartDate("all", "2026-08-01", "2026-07-13")).toBeUndefined();
+  });
+
+  it("has no left edge for goal when no goal start exists", () => {
+    expect(rangeStartDate("goal", "2026-08-01", undefined)).toBeUndefined();
+  });
+});
+
+describe("bandStatus", () => {
+  it("reports position relative to the corridor", () => {
+    expect(bandStatus(183, [178, 182])).toBe("above");
+    expect(bandStatus(180, [178, 182])).toBe("in");
+    expect(bandStatus(177, [178, 182])).toBe("below");
+  });
+
+  it("treats the edges as inside", () => {
+    expect(bandStatus(178, [178, 182])).toBe("in");
+    expect(bandStatus(182, [178, 182])).toBe("in");
   });
 });
 

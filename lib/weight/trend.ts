@@ -19,6 +19,34 @@ export function trailingAvg(
   return inWindow.length ? mean(inWindow.map((e) => e.lbs)) : undefined;
 }
 
+export type TrendRange = "goal" | "3m" | "all";
+
+const RANGE_3M_DAYS = 90;
+
+// Left edge of the visible window, or undefined for "all".
+export function rangeStartDate(
+  range: TrendRange,
+  today: string,
+  goalStartDate?: string,
+): string | undefined {
+  if (range === "all") return undefined;
+  if (range === "3m") return shiftDate(today, -RANGE_3M_DAYS);
+  return goalStartDate;
+}
+
+// Where the 7-day average sits relative to the goal corridor. The band is
+// ordered [lo, hi] regardless of goal direction, so "above"/"below" are
+// positional, and the caller words them for the goal.
+export function bandStatus(
+  avg: number,
+  band: [number, number],
+): "above" | "in" | "below" {
+  const [lo, hi] = band;
+  if (avg > hi) return "above";
+  if (avg < lo) return "below";
+  return "in";
+}
+
 // Anchor weight for the goal-rate corridor. A single weigh-in is too noisy
 // to hang the whole band from (a water-weight spike on goal-start day shifts
 // every projected week by the same offset), so anchor to the 7-day average

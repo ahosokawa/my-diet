@@ -13,7 +13,12 @@ import {
 } from "@/lib/db/repos";
 import type { Profile, WeightEntry } from "@/lib/db/schema";
 import { RATE_BANDS } from "@/lib/nutrition/macros";
-import { goalAnchorWeightLb } from "@/lib/weight/trend";
+import {
+  goalAnchorWeightLb,
+  rangeStartDate,
+  type TrendRange,
+} from "@/lib/weight/trend";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { MAINTAIN_DRIFT } from "./WeightChart";
 import { haptic } from "@/lib/ui/haptics";
 import { SwipeRow } from "@/components/ui/SwipeRow";
@@ -32,6 +37,7 @@ export default function WeightPage() {
     null,
   );
   const [swipeOpenId, setSwipeOpenId] = useState<number | null>(null);
+  const [range, setRange] = useState<TrendRange | null>(null);
   const scrollRef = useRef<HTMLElement>(null);
 
   async function load() {
@@ -49,6 +55,24 @@ export default function WeightPage() {
     if (!profile) return undefined;
     return goalAnchorWeightLb(entries, profile.goalStartDate) ?? profile.weightLb;
   }, [entries, profile]);
+
+  // The goal window is the default view — it's the span the pace band applies
+  // to. Needs two points to plot, otherwise fall back to the full history.
+  const goalRangeUsable = useMemo(() => {
+    if (!profile) return false;
+    return entries.filter((e) => e.date >= profile.goalStartDate).length >= 2;
+  }, [entries, profile]);
+
+  useEffect(() => {
+    if (loaded && range === null) setRange(goalRangeUsable ? "goal" : "all");
+  }, [loaded, range, goalRangeUsable]);
+
+  const activeRange: TrendRange = range ?? "all";
+  const fromDate = rangeStartDate(
+    activeRange,
+    todayStr(),
+    profile?.goalStartDate,
+  );
 
   useEffect(() => {
     if (editingId == null) return;
@@ -263,11 +287,27 @@ export default function WeightPage() {
                   </span>
                 )}
               </div>
+              {goalRangeUsable && (
+                <div className="mb-3">
+                  <SegmentedControl
+                    size="sm"
+                    ariaLabel="Trend range"
+                    value={activeRange}
+                    onChange={setRange}
+                    options={[
+                      { value: "goal", label: "Goal" },
+                      { value: "3m", label: "3M" },
+                      { value: "all", label: "All" },
+                    ]}
+                  />
+                </div>
+              )}
               <WeightChart
                 entries={entries}
                 goal={profile?.goal}
                 goalStartDate={profile?.goalStartDate}
                 goalStartWeightLb={goalStartWeightLb}
+                fromDate={fromDate}
               />
             </div>
           )}

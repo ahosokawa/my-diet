@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import type { WeightEntry } from "@/lib/db/schema";
 import { type Goal, RATE_BANDS } from "@/lib/nutrition/macros";
-import { trailingAvg } from "@/lib/weight/trend";
+import { bandStatus, trailingAvg } from "@/lib/weight/trend";
 import { useDarkMode } from "@/lib/ui/useDarkMode";
 import { formatYmd, parseYmd } from "@/lib/date";
 
@@ -21,6 +21,10 @@ type Props = {
   goal?: Goal;
   goalStartDate?: string;
   goalStartWeightLb?: number;
+  // Left edge of the visible window; undefined shows every entry. Averages are
+  // still computed from the full history so the leftmost point is a true
+  // 7-day average rather than a partial one.
+  fromDate?: string;
 };
 
 export const MAINTAIN_DRIFT = 0.015; // ±1.5% drift zone around goal-start weight
@@ -32,6 +36,7 @@ export function WeightChart({
   goal,
   goalStartDate,
   goalStartWeightLb,
+  fromDate,
 }: Props) {
   const dark = useDarkMode();
   const showBand =
@@ -45,7 +50,7 @@ export function WeightChart({
     avg?: number;
     bandRange?: [number, number];
   };
-  const data: Row[] = entries.map((e) => {
+  const allRows: Row[] = entries.map((e) => {
     const ts = parseYmd(e.date).getTime();
     const row: Row = { ts, lbs: e.lbs, avg: trailingAvg(entries, e.date) };
     if (showBand && goalStartWeightLb) {
@@ -65,11 +70,16 @@ export function WeightChart({
     return row;
   });
 
-  const lbs = entries.map((e) => e.lbs);
-  const bandValues = data.flatMap((d) => d.bandRange ?? []);
-  const allValues = [...lbs, ...bandValues];
-  const min = Math.floor(Math.min(...allValues) - 2);
-  const max = Math.ceil(Math.max(...allValues) + 2);
+  const fromTs = fromDate ? parseYmd(fromDate).getTime() : -Infinity;
+  const data = allRows.filter((r) => r.ts >= fromTs);
+  const bandVisible = data.some((r) => r.bandRange);
+
+  const values = [
+    ...data.map((d) => d.lbs),
+    ...data.flatMap((d) => d.bandRange ?? []),
+  ];
+  const min = Math.floor(Math.min(...values) - 2);
+  const max = Math.ceil(Math.max(...values) + 2);
 
   const grid = dark ? "#27272a" : "#ececec";
   const tick = dark ? "#a1a1aa" : "#71717a";
@@ -77,8 +87,24 @@ export function WeightChart({
   const tooltipBorder = dark ? "#27272a" : "#e5e5e5";
   const green = "#26a55e";
   const bandFill = dark ? "#3b82f6" : "#60a5fa";
+  const bandLabel = goal === "maintain" ? "Drift zone" : "Goal pace";
 
-  const mmdd = (ts: number) => formatYmd(new Date(ts)).slice(5);
+  const last = data[data.length - 1];
+  const status =
+    last?.avg !== undefined && last.bandRange
+      ? bandStatus(last.avg, last.bandRange)
+      : null;
+  // The corridor descends for a cut and climbs for a bulk, so "above the band"
+  // means behind pace when cutting and ahead of it when bulking.
+  const caption = (() => {
+    if (!status || last?.avg === undefined) return null;
+    const avg = `7-day avg ${last.avg.toFixed(1)} lbs`;
+    if (status === "in") return `${avg} — on pace`;
+    if (goal === "maintain")
+      return `${avg} — drifting ${status === "above" ? "up" : "down"}`;
+    const behind = goal === "cut" ? status === "above" : status === "below";
+    return `${avg} — ${behind ? "behind" : "ahead of"} goal pace`;
+  })();
 
   return (
     <div>
@@ -90,7 +116,7 @@ export function WeightChart({
             type="number"
             scale="time"
             domain={["dataMin", "dataMax"]}
-            tickFormatter={mmdd}
+            tickFormatter={(ts) => formatYmd(new Date(ts)).slice(5)}
             tick={{ fontSize: 11, fill: tick }}
             stroke={grid}
             minTickGap={28}
@@ -122,7 +148,7 @@ export function WeightChart({
             <Area
               type="linear"
               dataKey="bandRange"
-              name={goal === "maintain" ? "Drift zone" : "Goal pace"}
+              name={bandLabel}
               stroke={bandFill}
               strokeWidth={1}
               strokeOpacity={0.5}
@@ -163,13 +189,16 @@ export function WeightChart({
           <span className="h-1.5 w-1.5 rounded-full bg-brand-500/40" />
           Daily
         </span>
-        {!!showBand && (
+        {bandVisible && (
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-4 rounded-[3px] bg-[#3b82f6]/25" />
-            {goal === "maintain" ? "Drift zone" : "Goal pace"}
+            {bandLabel}
           </span>
         )}
       </div>
+      {caption && (
+        <p className="mt-2 text-xs text-fg-2 tabular-nums">{caption}</p>
+      )}
     </div>
   );
 }
