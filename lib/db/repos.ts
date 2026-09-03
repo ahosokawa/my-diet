@@ -4,6 +4,9 @@ import { todayStr } from "@/lib/date";
 import { defaultMealTimes } from "@/lib/schedule/week";
 import { isReviewWindowOpen, wasReviewedThisWeek } from "@/lib/review/window";
 import { hasReviewData, splitWeights } from "@/lib/review/engine";
+import { macrosFromKcal } from "@/lib/nutrition/macros";
+import { effectiveWeightLb, maintenanceKcal, recentAvgWeight } from "@/lib/nutrition/maintenance";
+import { kcalForRate } from "@/lib/nutrition/rate";
 
 export { todayStr };
 
@@ -50,6 +53,50 @@ export async function saveTargets(t: Omit<Targets, "id">): Promise<void> {
     await db.targets.where("dateEffective").equals(t.dateEffective).delete();
     await db.targets.add(t);
   });
+}
+
+// How far the recomputed number has to move before targets are rewritten.
+// Below this it's noise from a single weigh-in and not worth a new row.
+export const TARGET_DRIFT_KCAL = 25;
+
+/**
+ * Keeps the active targets row honest against bodyweight. Targets are anchored
+ * to a weekly rate, so as the trailing 7-day weigh-in average moves, both
+ * maintenance and the protein/fat grams (which are per-lb) move with it.
+ * Called on /today mount. No-ops when there are no weigh-ins in the window,
+ * when nothing has drifted, or before onboarding is finished.
+ */
+export async function syncTargetsToWeight(date = todayStr()): Promise<boolean> {
+  const [profile, targets, weights] = await Promise.all([
+    getProfile(),
+    getTargetsForDate(date),
+    listWeights(30),
+  ]);
+  if (!profile || !targets) return false;
+  if (recentAvgWeight(weights, date) === null) return false;
+
+  const weightLb = effectiveWeightLb(profile, weights, date);
+  const kcal = kcalForRate(maintenanceKcal(profile, weightLb), targets.rateLbPerWeek);
+  const m = macrosFromKcal({
+    kcal,
+    weightLb,
+    proteinPerLb: targets.proteinPerLb,
+    fatPerLb: targets.fatPerLb,
+  });
+  if (Math.abs(m.kcal - targets.kcal) < TARGET_DRIFT_KCAL) return false;
+
+  await saveTargets({
+    dateEffective: date,
+    kcal: m.kcal,
+    proteinG: m.proteinG,
+    fatG: m.fatG,
+    carbG: m.carbG,
+    proteinPerLb: targets.proteinPerLb,
+    fatPerLb: targets.fatPerLb,
+    rateLbPerWeek: targets.rateLbPerWeek,
+    source: targets.source,
+  });
+  return true;
 }
 
 export async function hasPendingTargetChange(): Promise<boolean> {

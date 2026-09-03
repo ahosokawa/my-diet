@@ -31,4 +31,5 @@ export {
   EyeOff,
   User,
   Target,
+  AlertTriangle,
 } from "lucide-react";

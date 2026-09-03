@@ -77,12 +77,30 @@ test("bulk path writes a surplus target", async ({ page }) => {
 
 test("custom calorie override on the review screen persists", async ({ page }) => {
   await walkToCalorieReview(page, /^Maintain/);
-  await page.getByRole("button", { name: "Custom" }).click();
-  await page.getByLabel("Custom calories per day").fill("2500");
+  await page.getByLabel("Daily calories").fill("2500");
+  await page.getByLabel("Daily calories").blur();
   await page.getByRole("button", { name: "Start tracking" }).click();
   await expect(page).toHaveURL(/\/today/);
 
   const targets = await readTable(page, "targets");
   expect(targets[0].kcal).toBe(2500);
   expect(targets[0].source).toBe("override");
+  // A hand-typed number still anchors to the rate it implies.
+  expect(targets[0].rateLbPerWeek).toBeLessThan(0);
+});
+
+test("rate slider drives the calorie target on the review screen", async ({ page }) => {
+  await walkToCalorieReview(page, /^Maintain/);
+  await page.getByLabel("Weekly rate of weight change").fill("-1");
+  await page.getByRole("button", { name: "Start tracking" }).click();
+  await expect(page).toHaveURL(/\/today/);
+
+  const targets = await readTable(page, "targets");
+  const profile = (await readTable(page, "profile"))[0];
+  expect(targets[0].rateLbPerWeek).toBe(-1);
+  // Maintenance ~2750 minus a 500 kcal/day deficit.
+  expect(targets[0].kcal).toBeGreaterThan(2200);
+  expect(targets[0].kcal).toBeLessThan(2300);
+  // The goal follows the chosen rate even though "Maintain" was picked earlier.
+  expect(profile.goal).toBe("cut");
 });

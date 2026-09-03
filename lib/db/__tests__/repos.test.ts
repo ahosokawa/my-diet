@@ -13,7 +13,11 @@ import {
   saveProfile,
   saveTargets,
   syncBuiltinFoods,
+  syncTargetsToWeight,
 } from "../repos";
+import { shiftDate } from "@/lib/date";
+import { maintenanceKcal } from "@/lib/nutrition/maintenance";
+import { kcalForRate } from "@/lib/nutrition/rate";
 import seedFoods from "../seed-foods.json";
 import type { Profile, Targets } from "../schema";
 
@@ -36,6 +40,7 @@ function makeTargets(dateEffective: string, kcal: number): Omit<Targets, "id"> {
     carbG: Math.max(0, Math.round((kcal - 180 * 4 - 72 * 9) / 4)),
     proteinPerLb: 1.0,
     fatPerLb: 0.45,
+    rateLbPerWeek: 0,
     source: "auto",
   };
 }
@@ -229,5 +234,79 @@ describe("getReviewState — hasWeightData", () => {
     await addWeight({ date: "2026-07-09", lbs: 180 });
     await addWeight({ date: "2026-07-01", lbs: 181 });
     expect((await getReviewState(today)).hasWeightData).toBe(true);
+  });
+});
+
+describe("syncTargetsToWeight", () => {
+  const TODAY = "2026-09-02";
+
+  // Targets anchored to -1 lb/wk at the profile's seed weight of 180 lb.
+  async function seedRateAnchoredTargets(rateLbPerWeek: number) {
+    await saveProfile(baseProfile);
+    const kcal = kcalForRate(maintenanceKcal(baseProfile, 180), rateLbPerWeek);
+    await saveTargets({
+      ...makeTargets(TODAY, kcal),
+      rateLbPerWeek,
+    });
+  }
+
+  it("no-ops without a weigh-in in the trailing week", async () => {
+    await seedRateAnchoredTargets(-1);
+    await addWeight({ date: "2026-01-01", lbs: 160 });
+    expect(await syncTargetsToWeight(TODAY)).toBe(false);
+  });
+
+  it("no-ops before onboarding", async () => {
+    expect(await syncTargetsToWeight(TODAY)).toBe(false);
+  });
+
+  it("leaves the target alone when weight has barely moved", async () => {
+    await seedRateAnchoredTargets(-1);
+    const before = await getTargetsForDate(TODAY);
+    await addWeight({ date: TODAY, lbs: 180 });
+    expect(await syncTargetsToWeight(TODAY)).toBe(false);
+    expect((await getTargetsForDate(TODAY))?.kcal).toBe(before?.kcal);
+  });
+
+  it("lowers the target as the 7-day average falls, holding the rate", async () => {
+    await seedRateAnchoredTargets(-1);
+    const before = await getTargetsForDate(TODAY);
+    for (let i = 0; i < 6; i++) {
+      await addWeight({ date: shiftDate(TODAY, -i), lbs: 168 });
+    }
+    expect(await syncTargetsToWeight(TODAY)).toBe(true);
+
+    const after = await getTargetsForDate(TODAY);
+    expect(after!.kcal).toBeLessThan(before!.kcal);
+    expect(after!.rateLbPerWeek).toBe(-1);
+    // Protein/fat are per-lb, so they follow the average down too.
+    expect(after!.proteinG).toBe(168);
+    expect(after!.fatG).toBe(Math.round(168 * 0.45));
+    // Still exactly a 1 lb/wk deficit, just at the new maintenance.
+    expect(after!.kcal).toBe(
+      kcalForRate(maintenanceKcal(baseProfile, 168), -1)
+    );
+  });
+
+  it("preserves the source of the row it recomputes", async () => {
+    await saveProfile(baseProfile);
+    const kcal = kcalForRate(maintenanceKcal(baseProfile, 180), -1);
+    await saveTargets({ ...makeTargets(TODAY, kcal), rateLbPerWeek: -1, source: "stay" });
+    await addWeight({ date: TODAY, lbs: 165 });
+    expect(await syncTargetsToWeight(TODAY)).toBe(true);
+    expect((await getTargetsForDate(TODAY))?.source).toBe("stay");
+  });
+
+  it("writes today's row without disturbing a pending future one", async () => {
+    await seedRateAnchoredTargets(-1);
+    await saveTargets({ ...makeTargets("2026-09-07", 2000), rateLbPerWeek: -1 });
+    await addWeight({ date: TODAY, lbs: 165 });
+    await syncTargetsToWeight(TODAY);
+
+    const pending = await db.targets
+      .where("dateEffective")
+      .equals("2026-09-07")
+      .first();
+    expect(pending?.kcal).toBe(2000);
   });
 });

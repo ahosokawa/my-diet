@@ -10,6 +10,8 @@ import type {
   WeightEntry,
 } from "@/lib/db/schema";
 import { shiftDate, parseYmd } from "@/lib/date";
+import { maintenanceKcal } from "@/lib/nutrition/maintenance";
+import { rateForKcal } from "@/lib/nutrition/rate";
 import seedFoods from "@/lib/db/seed-foods.json";
 
 const APP_VERSION = "e2e";
@@ -106,6 +108,9 @@ export function makeDay3MidWeek({ today, weightLb = 180, kcal = 2400 }: MidWeekO
     carbG,
     proteinPerLb: 1.0,
     fatPerLb: 0.45,
+    // Targets are rate-anchored; derive the rate this kcal implies so the
+    // /today weight sync sees nothing to correct.
+    rateLbPerWeek: rateForKcal(maintenanceKcal(profile, weightLb), kcal),
     source: "auto",
   };
 
@@ -168,6 +173,9 @@ export function makeWeek2ReviewReady({ today, weightLb = 180, kcal = 2400 }: Rev
     carbG,
     proteinPerLb: 1.0,
     fatPerLb: 0.45,
+    // Targets are rate-anchored; derive the rate this kcal implies so the
+    // /today weight sync sees nothing to correct.
+    rateLbPerWeek: rateForKcal(maintenanceKcal(profile, weightLb), kcal),
     source: "auto",
   };
 

@@ -1,4 +1,6 @@
 import type { EnvelopeTables } from "@/lib/backup/envelope";
+import { maintenanceKcal } from "@/lib/nutrition/maintenance";
+import { rateForKcal } from "@/lib/nutrition/rate";
 import type { Food, Profile, Targets } from "./schema";
 
 // Idempotent per-table default appliers. Restoring a backup replays these
@@ -31,20 +33,26 @@ export function withProfileDefaults(p: Profile): Profile {
   };
 }
 
-export function withTargetsDefaults(t: Targets): Targets {
+export function withTargetsDefaults(t: Targets, profile?: Profile): Targets {
   return {
     ...t,
     // v6
     proteinPerLb: t.proteinPerLb ?? 1.0,
     fatPerLb: t.fatPerLb ?? 0.45,
+    // v8: recover the anchor from the kcal the row already carries, so a
+    // restored backup keeps the exact target it was taken with.
+    rateLbPerWeek:
+      t.rateLbPerWeek ??
+      (profile ? rateForKcal(maintenanceKcal(profile, profile.weightLb), t.kcal) : 0),
   };
 }
 
 export function normalizeTables(tables: EnvelopeTables): EnvelopeTables {
+  const profile = tables.profile.map(withProfileDefaults);
   return {
     ...tables,
-    profile: tables.profile.map(withProfileDefaults),
-    targets: tables.targets.map(withTargetsDefaults),
+    profile,
+    targets: tables.targets.map((t) => withTargetsDefaults(t, profile[0])),
     foods: tables.foods.map(withFoodDefaults),
   };
 }

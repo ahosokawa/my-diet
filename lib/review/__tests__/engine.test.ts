@@ -3,6 +3,15 @@ import { computeReview, hasReviewData, splitWeights, MIN_SAMPLES } from "../engi
 
 const targets = { kcal: 2500, proteinG: 180, fatG: 72, carbG: 283 };
 
+// The rate each goal defaults to at the bodyweight these cases use. Passing it
+// keeps the suite pinned to the pre-rate behaviour: the verdicts below must not
+// change now that the review judges against a chosen rate rather than a band.
+const BAND_DEFAULT = {
+  maintain: 0,
+  cut: -1.5, // -0.75%/wk of 200 lb
+  bulk: 0.675, // +0.375%/wk of 180 lb
+};
+
 describe("computeReview — low-data guard", () => {
   it("forces maintain when the current week has too few weigh-ins", () => {
     const result = computeReview({
@@ -10,6 +19,7 @@ describe("computeReview — low-data guard", () => {
       previousWeek: [180, 180, 180, 180],
       currentTargets: targets,
       goal: "maintain",
+      targetRateLbPerWeek: BAND_DEFAULT.maintain,
     });
     expect(result.lowData).toBe(true);
     expect(result.verdict).toBe("maintain");
@@ -24,6 +34,7 @@ describe("computeReview — low-data guard", () => {
       previousWeek: Array(MIN_SAMPLES - 1).fill(184),
       currentTargets: targets,
       goal: "cut",
+      targetRateLbPerWeek: BAND_DEFAULT.cut,
     });
     expect(result.lowData).toBe(true);
     expect(result.verdict).toBe("maintain");
@@ -35,6 +46,7 @@ describe("computeReview — low-data guard", () => {
       previousWeek: Array(MIN_SAMPLES).fill(180),
       currentTargets: targets,
       goal: "maintain",
+      targetRateLbPerWeek: BAND_DEFAULT.maintain,
     });
     expect(result.lowData).toBe(false);
     expect(result.verdict).toBe("decrease");
@@ -49,6 +61,7 @@ describe("computeReview — carb floor clamp", () => {
       previousWeek: [180, 180, 180, 180],
       currentTargets: lowCarb,
       goal: "maintain",
+      targetRateLbPerWeek: BAND_DEFAULT.maintain,
     });
     expect(result.verdict).toBe("decrease");
     expect(result.newTargets.carbG).toBe(0);
@@ -64,6 +77,7 @@ describe("computeReview — maintain goal", () => {
       previousWeek: [180, 180.1, 179.9, 180, 180.2, 179.8, 180],
       currentTargets: targets,
       goal: "maintain",
+      targetRateLbPerWeek: BAND_DEFAULT.maintain,
     });
     expect(result.verdict).toBe("maintain");
     expect(result.kcalDelta).toBe(0);
@@ -77,6 +91,7 @@ describe("computeReview — maintain goal", () => {
       previousWeek: [180, 180, 180, 180, 180, 180, 180],
       currentTargets: targets,
       goal: "maintain",
+      targetRateLbPerWeek: BAND_DEFAULT.maintain,
     });
     expect(result.verdict).toBe("decrease");
     expect(result.kcalDelta).toBe(-150);
@@ -91,6 +106,7 @@ describe("computeReview — maintain goal", () => {
       previousWeek: [180, 180, 180, 180, 180, 180, 180],
       currentTargets: targets,
       goal: "maintain",
+      targetRateLbPerWeek: BAND_DEFAULT.maintain,
     });
     expect(result.verdict).toBe("increase");
     expect(result.kcalDelta).toBe(150);
@@ -106,6 +122,7 @@ describe("computeReview — cut goal", () => {
       previousWeek: [200, 200, 200, 200, 200, 200, 200],
       currentTargets: targets,
       goal: "cut",
+      targetRateLbPerWeek: BAND_DEFAULT.cut,
     });
     expect(result.verdict).toBe("maintain");
     expect(result.rateFlag).toBe("in_band");
@@ -119,6 +136,7 @@ describe("computeReview — cut goal", () => {
       previousWeek: [200, 200, 200, 200, 200, 200, 200],
       currentTargets: targets,
       goal: "cut",
+      targetRateLbPerWeek: BAND_DEFAULT.cut,
     });
     expect(result.verdict).toBe("decrease");
     expect(result.rateFlag).toBe("too_slow");
@@ -132,6 +150,7 @@ describe("computeReview — cut goal", () => {
       previousWeek: [200, 200, 200, 200, 200, 200, 200],
       currentTargets: targets,
       goal: "cut",
+      targetRateLbPerWeek: BAND_DEFAULT.cut,
     });
     expect(result.verdict).toBe("increase");
     expect(result.rateFlag).toBe("too_fast");
@@ -144,6 +163,7 @@ describe("computeReview — cut goal", () => {
       previousWeek: [200, 200, 200, 200, 200, 200, 200],
       currentTargets: targets,
       goal: "cut",
+      targetRateLbPerWeek: BAND_DEFAULT.cut,
     });
     expect(result.verdict).toBe("decrease");
     expect(result.rateFlag).toBe("too_slow");
@@ -158,6 +178,7 @@ describe("computeReview — bulk goal", () => {
       previousWeek: [180, 180, 180, 180, 180, 180, 180],
       currentTargets: targets,
       goal: "bulk",
+      targetRateLbPerWeek: BAND_DEFAULT.bulk,
     });
     expect(result.verdict).toBe("maintain");
     expect(result.rateFlag).toBe("in_band");
@@ -170,6 +191,7 @@ describe("computeReview — bulk goal", () => {
       previousWeek: [180, 180, 180, 180, 180, 180, 180],
       currentTargets: targets,
       goal: "bulk",
+      targetRateLbPerWeek: BAND_DEFAULT.bulk,
     });
     expect(result.verdict).toBe("increase");
     expect(result.rateFlag).toBe("too_slow");
@@ -183,10 +205,126 @@ describe("computeReview — bulk goal", () => {
       previousWeek: [180, 180, 180, 180, 180, 180, 180],
       currentTargets: targets,
       goal: "bulk",
+      targetRateLbPerWeek: BAND_DEFAULT.bulk,
     });
     expect(result.verdict).toBe("decrease");
     expect(result.rateFlag).toBe("too_fast");
     expect(result.kcalDelta).toBe(-150);
+  });
+});
+
+describe("computeReview — judged against the chosen rate", () => {
+  const flat = [200, 200, 200, 200, 200, 200, 200];
+
+  it("respects a gentler bulk than the goal default", () => {
+    // Chosen +0.2 lb/wk on 180 lb (~0.11%/wk); observed ~0.1%/wk. The old
+    // band-based rule called this "gaining too slowly" and added calories.
+    const result = computeReview({
+      currentWeek: Array(7).fill(180.18),
+      previousWeek: Array(7).fill(180),
+      currentTargets: targets,
+      goal: "bulk",
+      targetRateLbPerWeek: 0.2,
+    });
+    expect(result.verdict).toBe("maintain");
+    expect(result.rateFlag).toBe("in_band");
+    expect(result.kcalDelta).toBe(0);
+  });
+
+  it("raises kcal when losing much faster than the chosen cut rate", () => {
+    // Chosen -0.5 lb/wk (-0.25%/wk); observed -1%/wk.
+    const result = computeReview({
+      currentWeek: Array(7).fill(198),
+      previousWeek: flat,
+      currentTargets: targets,
+      goal: "cut",
+      targetRateLbPerWeek: -0.5,
+    });
+    expect(result.verdict).toBe("increase");
+    expect(result.rateFlag).toBe("too_fast");
+    expect(result.kcalDelta).toBe(150);
+  });
+
+  it("deepens the deficit when losing slower than the chosen cut rate", () => {
+    // Chosen -2 lb/wk (-1%/wk); observed -0.25%/wk.
+    const result = computeReview({
+      currentWeek: Array(7).fill(199.5),
+      previousWeek: flat,
+      currentTargets: targets,
+      goal: "cut",
+      targetRateLbPerWeek: -2,
+    });
+    expect(result.verdict).toBe("decrease");
+    expect(result.rateFlag).toBe("too_slow");
+    expect(result.safetyHold).toBe(false);
+  });
+
+  it("reports the chosen rate as a fraction of bodyweight", () => {
+    const result = computeReview({
+      currentWeek: flat,
+      previousWeek: flat,
+      currentTargets: targets,
+      goal: "cut",
+      targetRateLbPerWeek: -1,
+    });
+    expect(result.targetPct).toBe(-0.005);
+  });
+});
+
+describe("computeReview — safety hold", () => {
+  it("won't deepen a deficit that is already past the healthy rail", () => {
+    // Chosen -3 lb/wk (-1.5%/wk) — steeper than the band allows. Observed
+    // -1.2%/wk is behind that target but already too fast to cut further.
+    const result = computeReview({
+      currentWeek: Array(7).fill(197.6),
+      previousWeek: Array(7).fill(200),
+      currentTargets: targets,
+      goal: "cut",
+      targetRateLbPerWeek: -3,
+    });
+    expect(result.safetyHold).toBe(true);
+    expect(result.verdict).toBe("maintain");
+    expect(result.kcalDelta).toBe(0);
+    expect(result.rateFlag).toBe("too_fast");
+    expect(result.newTargets).toEqual(targets);
+  });
+
+  it("still allows raising kcal when losing too fast", () => {
+    const result = computeReview({
+      currentWeek: Array(7).fill(197),
+      previousWeek: Array(7).fill(200),
+      currentTargets: targets,
+      goal: "cut",
+      targetRateLbPerWeek: -1,
+    });
+    expect(result.safetyHold).toBe(false);
+    expect(result.verdict).toBe("increase");
+  });
+
+  it("won't add more surplus to a bulk already gaining too fast", () => {
+    // Chosen +2 lb/wk (1.11%/wk); observed +0.6%/wk, past the 0.5% rail.
+    const result = computeReview({
+      currentWeek: Array(7).fill(181.08),
+      previousWeek: Array(7).fill(180),
+      currentTargets: targets,
+      goal: "bulk",
+      targetRateLbPerWeek: 2,
+    });
+    expect(result.safetyHold).toBe(true);
+    expect(result.verdict).toBe("maintain");
+    expect(result.kcalDelta).toBe(0);
+  });
+
+  it("still trims a bulk that is gaining faster than intended", () => {
+    const result = computeReview({
+      currentWeek: Array(7).fill(181.8),
+      previousWeek: Array(7).fill(180),
+      currentTargets: targets,
+      goal: "bulk",
+      targetRateLbPerWeek: 0.2,
+    });
+    expect(result.safetyHold).toBe(false);
+    expect(result.verdict).toBe("decrease");
   });
 });
 

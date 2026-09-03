@@ -14,6 +14,7 @@ import {
   getMealLogsForDate,
   getReviewState,
   syncBuiltinFoods,
+  syncTargetsToWeight,
 } from "@/lib/db/repos";
 import type { Targets, MealLog } from "@/lib/db/schema";
 import { getDayPlan } from "@/lib/plan/day-plan";
@@ -56,6 +57,10 @@ function TodayView() {
     let cancelled = false;
     setLoading(true);
     (async () => {
+      // Targets are anchored to a weekly rate, so bring today's row in line
+      // with the latest weigh-ins before reading the day's plan off it.
+      await syncTargetsToWeight().catch(() => false);
+      if (cancelled) return;
       const [plan, logs] = await Promise.all([
         getDayPlan(date),
         getMealLogsForDate(date),

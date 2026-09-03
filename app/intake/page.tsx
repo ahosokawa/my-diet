@@ -7,10 +7,14 @@ import { ACTIVITY_FACTORS, type ActivityLevel, type Sex, tdee } from "@/lib/nutr
 import {
   DEFAULT_FAT_PER_LB,
   DEFAULT_PROTEIN_PER_LB,
-  kcalForGoal,
   macrosFromKcal,
   type Goal,
 } from "@/lib/nutrition/macros";
+import {
+  goalForRate,
+  kcalForRate,
+  recommendedRate,
+} from "@/lib/nutrition/rate";
 import {
   saveProfile,
   saveTargets,
@@ -21,6 +25,7 @@ import {
 import type { ScheduleDay } from "@/lib/db/schema";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { DecimalInput } from "@/components/ui/DecimalInput";
+import { GoalRateEditor } from "@/components/GoalRateEditor";
 import { Check, Dumbbell, ChevronDown, ChevronUp, Copy } from "@/components/ui/Icon";
 import { haptic } from "@/lib/ui/haptics";
 import { WEEKDAY_LABELS, copyTo, defaultMealTimes } from "@/lib/schedule/week";
@@ -102,8 +107,8 @@ export default function IntakePage() {
   const [editingDay, setEditingDay] = useState<number | null>(null);
   const [copyFrom, setCopyFrom] = useState<number | null>(null);
   const [copyTargets, setCopyTargets] = useState<Set<number>>(new Set());
-  const [calChoice, setCalChoice] = useState<"low" | "rec" | "high" | "custom">("rec");
-  const [customKcal, setCustomKcal] = useState<number | "">("");
+  // Anchor for the calorie target: null until the goal step picks a default.
+  const [rateLbPerWeek, setRateLbPerWeek] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [proteinPerLb, setProteinPerLb] = useState<number>(DEFAULT_PROTEIN_PER_LB);
@@ -128,25 +133,19 @@ export default function IntakePage() {
     );
   }, [d]);
 
-  const goalKcal = useMemo(() => {
-    if (!computedKcal || typeof d.weightLb !== "number") return null;
-    return kcalForGoal({ tdee: computedKcal, weightLb: d.weightLb, goal: d.goal });
-  }, [computedKcal, d.weightLb, d.goal]);
+  // The rate the goal defaults to, and the one we fall back to if the user
+  // reaches the calorie step without the goal step having seeded one.
+  const defaultRate = useMemo(() => {
+    if (typeof d.weightLb !== "number") return 0;
+    return recommendedRate(d.goal, d.weightLb);
+  }, [d.goal, d.weightLb]);
 
-  const kcalOptions = useMemo(() => {
-    if (!goalKcal) return null;
-    return {
-      low: goalKcal - 200,
-      rec: goalKcal,
-      high: goalKcal + 200,
-    };
-  }, [goalKcal]);
+  const rate = rateLbPerWeek ?? defaultRate;
 
   const finalKcal = useMemo(() => {
-    if (!kcalOptions) return 0;
-    if (calChoice === "custom" && typeof customKcal === "number") return customKcal;
-    return kcalOptions[calChoice === "custom" ? "rec" : calChoice];
-  }, [calChoice, customKcal, kcalOptions]);
+    if (!computedKcal) return 0;
+    return kcalForRate(computedKcal, rate);
+  }, [computedKcal, rate]);
 
   const finalMacros = useMemo(() => {
     if (!finalKcal || typeof d.weightLb !== "number") return null;
@@ -173,8 +172,7 @@ export default function IntakePage() {
     if (step === 4) return true;
     if (step === 5) return true;
     if (step === 6) return true;
-    if (step === 7)
-      return calChoice !== "custom" || (typeof customKcal === "number" && customKcal > 0);
+    if (step === 7) return finalKcal > 0;
     return true;
   })();
 
@@ -217,7 +215,7 @@ export default function IntakePage() {
       heightIn,
       weightLb: d.weightLb,
       activity: d.activity,
-      goal: d.goal,
+      goal: goalForRate(rate, d.weightLb),
       goalStartDate: todayStr(),
     });
     await saveTargets({
@@ -228,7 +226,11 @@ export default function IntakePage() {
       carbG: finalMacros.carbG,
       proteinPerLb,
       fatPerLb,
-      source: calChoice === "rec" ? "auto" : "override",
+      rateLbPerWeek: rate,
+      source:
+        Math.abs(rate - recommendedRate(d.goal, d.weightLb)) < 0.01
+          ? "auto"
+          : "override",
     });
     await saveWholeSchedule(schedule);
     await syncBuiltinFoods();
@@ -402,7 +404,12 @@ export default function IntakePage() {
                   return (
                     <button
                       key={g}
-                      onClick={() => setD({ ...d, goal: g })}
+                      onClick={() => {
+                        setD({ ...d, goal: g });
+                        // Re-seed the pace from the new goal, discarding any
+                        // hand-set rate from a previous pass through this step.
+                        setRateLbPerWeek(null);
+                      }}
                       className={`flex w-full items-center justify-between rounded-2xl border-2 px-4 py-3 text-left transition-colors ${
                         active
                           ? "border-brand-500 bg-brand-50 dark:bg-brand-900/30"
@@ -548,110 +555,30 @@ export default function IntakePage() {
               </>
             )}
 
-            {step === 7 && kcalOptions && (
+            {step === 7 && computedKcal !== null && typeof d.weightLb === "number" && (
               <>
                 <p className="mb-4 text-sm text-fg-2">
-                  Based on your info, we recommend{" "}
-                  <strong className="text-fg-1">{kcalOptions.rec} kcal</strong>{" "}
+                  We start you at{" "}
+                  <strong className="text-fg-1 tabular-nums">
+                    {kcalForRate(computedKcal, defaultRate).toLocaleString("en-US")} kcal
+                  </strong>{" "}
                   {d.goal === "cut"
                     ? "to lose fat at a healthy rate."
                     : d.goal === "bulk"
                     ? "to gain weight at a lean-bulk pace."
-                    : "to maintain weight."}
+                    : "to maintain weight."}{" "}
+                  Adjust the pace or the number itself.
                 </p>
-                <div className="space-y-2">
-                  {(
-                    [
-                      { key: "low" as const, label: "Slightly under", kcal: kcalOptions.low },
-                      { key: "rec" as const, label: "Recommended", kcal: kcalOptions.rec },
-                      { key: "high" as const, label: "Slightly over", kcal: kcalOptions.high },
-                    ]
-                  ).map((opt) => {
-                    const active = calChoice === opt.key;
-                    return (
-                      <button
-                        key={opt.key}
-                        onClick={() => setCalChoice(opt.key)}
-                        className={`flex w-full items-baseline justify-between rounded-2xl border-2 px-4 py-3 ${
-                          active
-                            ? "border-brand-500 bg-brand-50 dark:bg-brand-900/30"
-                            : "border-hairline bg-surface-2"
-                        }`}
-                      >
-                        <span
-                          className={`text-sm font-semibold ${active ? "text-brand-700 dark:text-brand-300" : "text-fg-1"}`}
-                        >
-                          {opt.label}
-                        </span>
-                        <span className="text-lg font-bold tabular-nums">
-                          {opt.kcal}{" "}
-                          <span className="text-xs font-normal text-fg-3">kcal</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-
-                  <button
-                    onClick={() => setCalChoice("custom")}
-                    className={`w-full rounded-2xl border-2 px-4 py-3 text-left text-sm font-semibold ${
-                      calChoice === "custom"
-                        ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300"
-                        : "border-hairline bg-surface-2 text-fg-1"
-                    }`}
-                  >
-                    Custom
-                  </button>
-
-                  {calChoice === "custom" && (
-                    <div className="mt-2">
-                      <label className="label">Calories per day</label>
-                      <input
-                        autoFocus
-                        inputMode="numeric"
-                        aria-label="Custom calories per day"
-                        className="input text-2xl font-semibold tabular-nums"
-                        placeholder="2400"
-                        value={customKcal}
-                        onChange={(e) =>
-                          setCustomKcal(
-                            e.target.value === "" ? "" : Number(e.target.value)
-                          )
-                        }
-                      />
-                    </div>
-                  )}
+                <div className="rounded-2xl border border-hairline bg-surface-2 p-4">
+                  <GoalRateEditor
+                    maintenanceKcal={computedKcal}
+                    weightLb={d.weightLb}
+                    rateLbPerWeek={rate}
+                    onRateChange={setRateLbPerWeek}
+                    proteinPerLb={proteinPerLb}
+                    fatPerLb={fatPerLb}
+                  />
                 </div>
-
-                {finalMacros && (
-                  <div className="mt-4 rounded-2xl bg-surface-3 p-4">
-                    <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-fg-3">
-                      Macro breakdown
-                    </h3>
-                    <div className="grid grid-cols-3 gap-3 text-center">
-                      <div>
-                        <div className="text-xl font-bold tabular-nums" style={{ color: "#26a55e" }}>
-                          {finalMacros.proteinG}g
-                        </div>
-                        <div className="text-xs text-fg-3">Protein</div>
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold tabular-nums" style={{ color: "#f59e0b" }}>
-                          {finalMacros.fatG}g
-                        </div>
-                        <div className="text-xs text-fg-3">Fat</div>
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold tabular-nums" style={{ color: "#3b82f6" }}>
-                          {finalMacros.carbG}g
-                        </div>
-                        <div className="text-xs text-fg-3">Carbs</div>
-                      </div>
-                    </div>
-                    <div className="mt-3 text-center text-sm font-medium tabular-nums">
-                      {finalMacros.kcal} kcal
-                    </div>
-                  </div>
-                )}
 
                 <button
                   onClick={() => setShowAdvanced((v) => !v)}

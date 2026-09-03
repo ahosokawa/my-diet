@@ -109,4 +109,28 @@ body {
   .hairline {
     @apply border-hairline;
   }
+  /* Range input stripped to just its thumb — the track is drawn by the
+     wrapper in components/ui/Slider.tsx so the fill can start at zero. */
+  .slider-bare {
+    @apply w-full cursor-pointer appearance-none bg-transparent;
+  }
+  .slider-bare::-webkit-slider-runnable-track {
+    @apply h-7 bg-transparent;
+  }
+  .slider-bare::-webkit-slider-thumb {
+    @apply h-7 w-7 appearance-none rounded-full border border-black/5 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.28)];
+  }
+  .slider-bare::-moz-range-track {
+    @apply h-7 bg-transparent;
+  }
+  .slider-bare::-moz-range-thumb {
+    @apply h-7 w-7 appearance-none rounded-full border border-black/5 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.28)];
+  }
+  .dark .slider-bare::-webkit-slider-thumb,
+  .dark .slider-bare::-moz-range-thumb {
+    @apply border-white/10 bg-zinc-200;
+  }
+  .slider-bare:active::-webkit-slider-thumb {
+    @apply scale-105;
+  }
 }

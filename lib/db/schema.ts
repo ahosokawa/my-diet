@@ -1,6 +1,8 @@
 import Dexie, { type Table } from "dexie";
 import type { ActivityLevel, Sex } from "../nutrition/mifflin";
 import type { Goal } from "../nutrition/macros";
+import { maintenanceKcal } from "../nutrition/maintenance";
+import { rateForKcal } from "../nutrition/rate";
 import { DB_SCHEMA_VERSION } from "./version";
 
 export type { Goal };
@@ -28,6 +30,9 @@ export type Targets = {
   carbG: number;
   proteinPerLb: number;
   fatPerLb: number;
+  // The weekly weight-change rate this target is anchored to (lb/week, signed).
+  // kcal is derived from it at the bodyweight in effect — see lib/nutrition/rate.ts.
+  rateLbPerWeek: number;
   source: "auto" | "override" | "stay";
 };
 
@@ -169,6 +174,18 @@ class MyDietDb extends Dexie {
         if (p.enablePostWorkoutCarbBias === undefined) {
           p.enablePostWorkoutCarbBias = true;
         }
+      });
+    });
+    this.version(8).upgrade(async (tx) => {
+      // Targets became rate-anchored. Backfill from the calorie number each
+      // row already has rather than from the goal's default rate, so nobody's
+      // target moves just because they upgraded.
+      const [p] = await tx.table("profile").toArray();
+      await tx.table("targets").toCollection().modify((t) => {
+        if (t.rateLbPerWeek !== undefined) return;
+        t.rateLbPerWeek = p
+          ? rateForKcal(maintenanceKcal(p, p.weightLb), t.kcal)
+          : 0;
       });
     });
   }

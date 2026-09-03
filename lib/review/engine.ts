@@ -8,6 +8,13 @@ export type ReviewInput = {
   previousWeek: number[];
   currentTargets: MacroTarget;
   goal: Goal;
+  /**
+   * The weekly rate the user actually chose (lb/week, signed) — the target the
+   * observed change is judged against. Judging against the goal's default band
+   * instead would make the review fight anyone who deliberately picked a
+   * gentler or steeper pace than the default.
+   */
+  targetRateLbPerWeek: number;
 };
 
 export type ReviewVerdict = "maintain" | "decrease" | "increase";
@@ -19,9 +26,15 @@ export type ReviewSuggestion = {
   avgWeight: number;
   prevAvgWeight: number;
   deltaPct: number;
-  // Flags when observed rate is outside the healthy band for the current goal.
-  // For cut: true when losing faster than max (health guard) → raise kcal.
+  // Flags how the observed rate compares to the chosen one.
+  // For cut: "too_fast" means losing faster than intended → raise kcal.
   rateFlag: "too_slow" | "in_band" | "too_fast" | null;
+  // The chosen rate as a fraction of bodyweight per week, for display.
+  targetPct: number;
+  // True when an adjustment was withheld because weight is already moving
+  // faster than the goal's healthy band, even though the chosen rate is
+  // steeper still. The verdict is forced to "maintain".
+  safetyHold: boolean;
   // True when either week has fewer than MIN_SAMPLES weigh-ins — the weekly
   // averages are too noisy to act on, so the verdict is forced to "maintain".
   lowData: boolean;
@@ -62,6 +75,7 @@ export function computeReview(input: ReviewInput): ReviewSuggestion {
   const prev = mean(input.previousWeek);
   const deltaPct = prev > 0 ? (avg - prev) / prev : 0;
   const band = RATE_BANDS[input.goal];
+  const targetPct = prev > 0 ? input.targetRateLbPerWeek / prev : 0;
   const lowData =
     input.currentWeek.length < MIN_SAMPLES ||
     input.previousWeek.length < MIN_SAMPLES;
@@ -75,6 +89,8 @@ export function computeReview(input: ReviewInput): ReviewSuggestion {
       prevAvgWeight: round2(prev),
       deltaPct: round4(deltaPct),
       rateFlag: null,
+      targetPct: round4(targetPct),
+      safetyHold: false,
       lowData: true,
     };
   }
@@ -83,49 +99,38 @@ export function computeReview(input: ReviewInput): ReviewSuggestion {
   let kcalDelta = 0;
   let rateFlag: ReviewSuggestion["rateFlag"] = null;
 
-  if (input.goal === "maintain") {
-    // Existing maintain logic: nudge kcal when weight drifts > 0.3%.
-    if (deltaPct > band.max) {
-      verdict = "decrease";
-      kcalDelta = -ADJUSTMENT;
-      rateFlag = "too_fast";
-    } else if (deltaPct < band.min) {
-      verdict = "increase";
-      kcalDelta = ADJUSTMENT;
-      rateFlag = "too_fast";
-    } else {
-      rateFlag = "in_band";
-    }
-  } else if (input.goal === "cut") {
-    // Band is negative: min = -1.0%/wk (cap), max = -0.5%/wk (floor).
-    if (deltaPct > band.max) {
-      // Losing too slowly (or gaining) — deepen deficit.
-      verdict = "decrease";
-      kcalDelta = -ADJUSTMENT;
-      rateFlag = "too_slow";
-    } else if (deltaPct < band.min) {
-      // Losing too fast — raise kcal (health guard).
-      verdict = "increase";
-      kcalDelta = ADJUSTMENT;
-      rateFlag = "too_fast";
-    } else {
-      rateFlag = "in_band";
-    }
+  // How far off the chosen pace this week landed. Positive means gaining more
+  // (or losing less) than intended, whatever the goal.
+  const gap = deltaPct - targetPct;
+  // Same sensitivity the fixed bands had — half a band's width — but recentred
+  // on the chosen rate instead of the goal's default.
+  const tolerance = (band.max - band.min) / 2;
+
+  if (gap > tolerance) {
+    verdict = "decrease";
+    kcalDelta = -ADJUSTMENT;
+    rateFlag = input.goal === "cut" ? "too_slow" : "too_fast";
+  } else if (gap < -tolerance) {
+    verdict = "increase";
+    kcalDelta = ADJUSTMENT;
+    rateFlag = input.goal === "bulk" ? "too_slow" : "too_fast";
   } else {
-    // bulk — band positive: min = +0.25%/wk (floor), max = +0.5%/wk (cap).
-    if (deltaPct < band.min) {
-      // Gaining too slowly — raise kcal.
-      verdict = "increase";
-      kcalDelta = ADJUSTMENT;
-      rateFlag = "too_slow";
-    } else if (deltaPct > band.max) {
-      // Gaining too fast — trim surplus (fat-gain guard).
-      verdict = "decrease";
-      kcalDelta = -ADJUSTMENT;
-      rateFlag = "too_fast";
-    } else {
-      rateFlag = "in_band";
-    }
+    rateFlag = "in_band";
+  }
+
+  // Chasing a chosen rate is one thing; deepening a deficit that is already
+  // past the healthy rail is another. Hold instead, whatever the rate says.
+  const safetyHold =
+    (input.goal === "cut" &&
+      verdict === "decrease" &&
+      deltaPct <= RATE_BANDS.cut.min) ||
+    (input.goal === "bulk" &&
+      verdict === "increase" &&
+      deltaPct >= RATE_BANDS.bulk.max);
+  if (safetyHold) {
+    verdict = "maintain";
+    kcalDelta = 0;
+    rateFlag = "too_fast";
   }
 
   const carbDelta = Math.round(kcalDelta / KCAL.carb);
@@ -150,6 +155,8 @@ export function computeReview(input: ReviewInput): ReviewSuggestion {
     prevAvgWeight: round2(prev),
     deltaPct: round4(deltaPct),
     rateFlag,
+    targetPct: round4(targetPct),
+    safetyHold,
     lowData: false,
   };
 }

@@ -25,6 +25,8 @@ import {
   type ReviewVerdict,
 } from "@/lib/review/engine";
 import { KCAL, RATE_BANDS } from "@/lib/nutrition/macros";
+import { effectiveWeightLb, maintenanceKcal } from "@/lib/nutrition/maintenance";
+import { rateForKcal } from "@/lib/nutrition/rate";
 import { parseYmd, shiftDate, todayStr } from "@/lib/date";
 
 const VERDICT_META: Record<
@@ -85,6 +87,14 @@ function reviewCopy(
   s: ReviewSuggestion
 ): string {
   const kcal = Math.abs(s.kcalDelta);
+  if (s.safetyHold) {
+    const rail = Math.abs(
+      (goal === "cut" ? RATE_BANDS.cut.min : RATE_BANDS.bulk.max) * 100
+    ).toFixed(1);
+    return goal === "cut"
+      ? `You're already losing more than ${rail}%/wk. Holding here rather than cutting further, even though your target is faster.`
+      : `You're already gaining more than ${rail}%/wk. Holding here rather than adding more, even though your target is faster.`;
+  }
   if (goal === "cut") {
     if (s.rateFlag === "in_band") return "On track. Keep current targets.";
     if (s.rateFlag === "too_slow")
@@ -170,6 +180,7 @@ export default function ReviewPage() {
         carbG: targets.carbG,
       },
       goal: profile.goal,
+      targetRateLbPerWeek: targets.rateLbPerWeek,
     });
   }, [targets, profile, current, previous]);
 
@@ -177,6 +188,14 @@ export default function ReviewPage() {
     if (!targets) return;
     setSaving(true);
     const t = targetsFromKcal(targets, kcal);
+    // Targets are rate-anchored, so an accepted adjustment has to move the
+    // anchor too — otherwise the next weight-driven recompute would undo it.
+    // Re-derive the rate this new number implies at current maintenance.
+    const weightLb = profile ? effectiveWeightLb(profile, weights, today) : null;
+    const rateLbPerWeek =
+      profile && weightLb !== null
+        ? rateForKcal(maintenanceKcal(profile, weightLb), t.kcal)
+        : targets.rateLbPerWeek;
     await saveTargets({
       dateEffective: effectiveDate,
       kcal: t.kcal,
@@ -185,6 +204,7 @@ export default function ReviewPage() {
       carbG: t.carbG,
       proteinPerLb: targets.proteinPerLb,
       fatPerLb: targets.fatPerLb,
+      rateLbPerWeek,
       source,
     });
     await markReviewDone(todayStr());
@@ -422,12 +442,17 @@ export default function ReviewPage() {
                 {deltaPctDisplay}%
               </span>
             </div>
-            {profile && profile.goal !== "maintain" && (
+            {profile && (
               <div className="mt-1 text-xs text-fg-3 tabular-nums">
-                Healthy{" "}
-                {profile.goal === "cut" ? "loss" : "gain"} band:{" "}
-                {Math.abs(RATE_BANDS[profile.goal].min * 100).toFixed(1)}–
-                {Math.abs(RATE_BANDS[profile.goal].max * 100).toFixed(1)}%/wk
+                {/* The pace you chose is what this is judged against; the
+                    healthy band is shown as context, not as the target. */}
+                Your target: {(suggestion.targetPct * 100).toFixed(2)}%/wk
+                {profile.goal !== "maintain" &&
+                  ` · healthy ${Math.abs(
+                    RATE_BANDS[profile.goal].min * 100
+                  ).toFixed(1)}–${Math.abs(
+                    RATE_BANDS[profile.goal].max * 100
+                  ).toFixed(1)}%/wk`}
               </div>
             )}
           </div>

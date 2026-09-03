@@ -20,7 +20,7 @@ export const RATE_BANDS: Record<Goal, { min: number; max: number; target: number
   bulk: { min: 0.0025, max: 0.005, target: 0.00375 },
 };
 
-const KCAL_PER_LB_FAT = 3500;
+export const KCAL_PER_LB_FAT = 3500;
 
 export function macrosFromKcal(params: {
   kcal: number;

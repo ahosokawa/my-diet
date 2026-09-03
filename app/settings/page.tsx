@@ -6,7 +6,7 @@ import { TabBar } from "@/components/TabBar";
 import { Toggle } from "@/components/ui/Toggle";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { DecimalInput } from "@/components/ui/DecimalInput";
-import { Bell, Dumbbell, User } from "@/components/ui/Icon";
+import { Bell, ChevronDown, ChevronUp, Dumbbell, User } from "@/components/ui/Icon";
 import { BackupSection } from "./BackupSection";
 import { haptic } from "@/lib/ui/haptics";
 import {
@@ -14,21 +14,32 @@ import {
   getCurrentTargets,
   getNotifPrefs,
   getProfile,
+  listWeights,
   saveNotifPrefs,
   saveProfile,
   saveTargets,
   todayStr,
 } from "@/lib/db/repos";
-import type { NotifPrefs, Profile, Targets } from "@/lib/db/schema";
+import type { NotifPrefs, Profile, Targets, WeightEntry } from "@/lib/db/schema";
 import type { ActivityLevel, Sex } from "@/lib/nutrition/mifflin";
-import { ACTIVITY_FACTORS, tdee } from "@/lib/nutrition/mifflin";
+import { ACTIVITY_FACTORS } from "@/lib/nutrition/mifflin";
 import {
   DEFAULT_FAT_PER_LB,
   DEFAULT_PROTEIN_PER_LB,
-  kcalForGoal,
   macrosFromKcal,
   type Goal,
 } from "@/lib/nutrition/macros";
+import {
+  effectiveWeightLb,
+  maintenanceKcal,
+  recentAvgWeight,
+} from "@/lib/nutrition/maintenance";
+import {
+  goalForRate,
+  kcalForRate,
+  recommendedRate,
+} from "@/lib/nutrition/rate";
+import { GoalRateEditor } from "@/components/GoalRateEditor";
 import { Target as TargetIcon } from "@/components/ui/Icon";
 import {
   getPermission,
@@ -76,25 +87,29 @@ export default function SettingsPage() {
     activity: ActivityLevel;
   } | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [weights, setWeights] = useState<WeightEntry[]>([]);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalDraft, setGoalDraft] = useState<{
-    goal: Goal;
+    rateLbPerWeek: number;
     proteinPerLb: number;
     fatPerLb: number;
   } | null>(null);
   const [savingGoal, setSavingGoal] = useState(false);
+  const [showMacroSplit, setShowMacroSplit] = useState(false);
   const scrollRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     (async () => {
-      const [p, prof, t] = await Promise.all([
+      const [p, prof, t, w] = await Promise.all([
         getNotifPrefs(),
         getProfile(),
         getCurrentTargets(),
+        listWeights(30),
       ]);
       setPrefs(p);
       if (prof) setProfile(prof);
       if (t) setTargets(t);
+      setWeights(w);
       setLoaded(true);
       setPerm(getPermission());
       setHasTrigger(supportsTimestampTrigger());
@@ -143,7 +158,7 @@ export default function SettingsPage() {
   function startEditGoal() {
     if (!profile || !targets) return;
     setGoalDraft({
-      goal: profile.goal,
+      rateLbPerWeek: targets.rateLbPerWeek,
       proteinPerLb: targets.proteinPerLb,
       fatPerLb: targets.fatPerLb,
     });
@@ -154,55 +169,48 @@ export default function SettingsPage() {
     if (!profile || !targets || !goalDraft) return;
     setSavingGoal(true);
     const today = todayStr();
-    const goalChanged = goalDraft.goal !== profile.goal;
-    const macrosChanged =
-      goalDraft.proteinPerLb !== targets.proteinPerLb ||
-      goalDraft.fatPerLb !== targets.fatPerLb;
+    const { rateLbPerWeek, proteinPerLb, fatPerLb } = goalDraft;
+    const weightLb = effectiveWeightLb(profile, weights, today);
 
-    if (goalChanged) {
-      const nextProfile: Profile = {
-        ...profile,
-        goal: goalDraft.goal,
-        goalStartDate: today,
-      };
+    // The goal is whatever the chosen rate implies — the review engine and the
+    // rate bands both key off profile.goal, so keep it in step with the slider.
+    const goal = goalForRate(rateLbPerWeek, weightLb);
+    if (goal !== profile.goal) {
+      const nextProfile: Profile = { ...profile, goal, goalStartDate: today };
       await saveProfile(nextProfile);
       setProfile(nextProfile);
     }
 
-    if (goalChanged || macrosChanged) {
-      const baseKcal = goalChanged
-        ? kcalForGoal({
-            tdee: tdee({
-              sex: profile.sex,
-              age: profile.age,
-              heightIn: profile.heightIn,
-              weightLb: profile.weightLb,
-              activity: profile.activity,
-            }),
-            weightLb: profile.weightLb,
-            goal: goalDraft.goal,
-          })
-        : targets.kcal;
+    const changed =
+      rateLbPerWeek !== targets.rateLbPerWeek ||
+      proteinPerLb !== targets.proteinPerLb ||
+      fatPerLb !== targets.fatPerLb;
+
+    if (changed) {
       const m = macrosFromKcal({
-        kcal: baseKcal,
-        weightLb: profile.weightLb,
-        proteinPerLb: goalDraft.proteinPerLb,
-        fatPerLb: goalDraft.fatPerLb,
+        kcal: kcalForRate(maintenanceKcal(profile, weightLb), rateLbPerWeek),
+        weightLb,
+        proteinPerLb,
+        fatPerLb,
       });
+      const onRecommendedPace =
+        Math.abs(rateLbPerWeek - recommendedRate(goal, weightLb)) < 0.01;
       const newTargets: Omit<Targets, "id"> = {
         dateEffective: today,
         kcal: m.kcal,
         proteinG: m.proteinG,
         fatG: m.fatG,
         carbG: m.carbG,
-        proteinPerLb: goalDraft.proteinPerLb,
-        fatPerLb: goalDraft.fatPerLb,
-        source: goalChanged ? "auto" : "override",
+        proteinPerLb,
+        fatPerLb,
+        rateLbPerWeek,
+        source: onRecommendedPace ? "auto" : "override",
       };
       await saveTargets(newTargets);
       setTargets({ ...newTargets });
     }
 
+    haptic("success");
     setEditingGoal(false);
     setGoalDraft(null);
     setSavingGoal(false);
@@ -265,6 +273,8 @@ export default function SettingsPage() {
     );
   }
 
+  const avgWeightLb = recentAvgWeight(weights, todayStr());
+  const goalWeightLb = profile ? effectiveWeightLb(profile, weights, todayStr()) : 0;
   const supported = perm !== "unsupported";
   const granted = perm === "granted";
   const isIOSLike = supported && !hasTrigger;
@@ -452,8 +462,14 @@ export default function SettingsPage() {
                 <div className="min-w-0 flex-1">
                   <h2 className="font-semibold">Goal & macros</h2>
                   <p className="truncate text-xs text-fg-3 tabular-nums">
-                    {GOAL_LABELS[profile.goal]} · {targets.proteinPerLb.toFixed(2)}P ·{" "}
-                    {targets.fatPerLb.toFixed(2)}F /lb
+                    {/* Labelled from the stored rate, not profile.goal — the
+                        rate is the anchor and can't drift out of step. */}
+                    {GOAL_LABELS[goalForRate(targets.rateLbPerWeek, goalWeightLb)]} ·{" "}
+                    {targets.kcal.toLocaleString("en-US")} kcal
+                    {targets.rateLbPerWeek !== 0 &&
+                      ` · ${targets.rateLbPerWeek < 0 ? "−" : "+"}${Math.abs(
+                        targets.rateLbPerWeek
+                      ).toFixed(2)} lb/wk`}
                   </p>
                 </div>
                 {!editingGoal && (
@@ -467,67 +483,81 @@ export default function SettingsPage() {
                 )}
               </div>
               {editingGoal && goalDraft && (
-                <div className="mt-4 space-y-3 border-t border-hairline pt-4">
-                  <div>
-                    <label className="label">Goal</label>
-                    <div className="space-y-1">
-                      {(["cut", "maintain", "bulk"] as Goal[]).map((g) => {
-                        const active = goalDraft.goal === g;
-                        return (
-                          <button
-                            key={g}
-                            onClick={() => setGoalDraft({ ...goalDraft, goal: g })}
-                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm ${
-                              active
-                                ? "bg-brand-50 font-semibold text-brand-700 dark:bg-brand-900/30 dark:text-brand-300"
-                                : "text-fg-2"
-                            }`}
-                          >
-                            {GOAL_LABELS[g]}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <label className="label">Protein g/lb</label>
-                      <DecimalInput
-                        ariaLabel="Protein per lb"
-                        className="input text-lg font-semibold tabular-nums"
-                        value={goalDraft.proteinPerLb}
-                        onValueChange={(n) =>
-                          setGoalDraft({ ...goalDraft, proteinPerLb: n })
-                        }
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="label">Fat g/lb</label>
-                      <DecimalInput
-                        ariaLabel="Fat per lb"
-                        className="input text-lg font-semibold tabular-nums"
-                        value={goalDraft.fatPerLb}
-                        onValueChange={(n) =>
-                          setGoalDraft({ ...goalDraft, fatPerLb: n })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <button
-                    onClick={() =>
-                      setGoalDraft({
-                        ...goalDraft,
-                        proteinPerLb: DEFAULT_PROTEIN_PER_LB,
-                        fatPerLb: DEFAULT_FAT_PER_LB,
-                      })
+                <div className="mt-4 space-y-5 border-t border-hairline pt-4">
+                  <GoalRateEditor
+                    maintenanceKcal={maintenanceKcal(profile, goalWeightLb)}
+                    weightLb={goalWeightLb}
+                    rateLbPerWeek={goalDraft.rateLbPerWeek}
+                    onRateChange={(rateLbPerWeek) =>
+                      setGoalDraft({ ...goalDraft, rateLbPerWeek })
                     }
-                    className="text-xs font-medium text-brand-600 dark:text-brand-400"
-                  >
-                    Reset macros to defaults
-                  </button>
+                    proteinPerLb={goalDraft.proteinPerLb}
+                    fatPerLb={goalDraft.fatPerLb}
+                  />
+
+                  <div className="border-t border-hairline pt-4">
+                    <button
+                      className="flex w-full items-center justify-between text-sm font-medium text-fg-2"
+                      onClick={() => setShowMacroSplit((v) => !v)}
+                      aria-expanded={showMacroSplit}
+                    >
+                      Macro split
+                      {showMacroSplit ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </button>
+                    {showMacroSplit && (
+                      <div className="mt-3 space-y-3">
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <label className="label">Protein g/lb</label>
+                            <DecimalInput
+                              ariaLabel="Protein per lb"
+                              className="input text-lg font-semibold tabular-nums"
+                              value={goalDraft.proteinPerLb}
+                              onValueChange={(n) =>
+                                setGoalDraft({ ...goalDraft, proteinPerLb: n })
+                              }
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="label">Fat g/lb</label>
+                            <DecimalInput
+                              ariaLabel="Fat per lb"
+                              className="input text-lg font-semibold tabular-nums"
+                              value={goalDraft.fatPerLb}
+                              onValueChange={(n) =>
+                                setGoalDraft({ ...goalDraft, fatPerLb: n })
+                              }
+                            />
+                          </div>
+                        </div>
+                        <button
+                          onClick={() =>
+                            setGoalDraft({
+                              ...goalDraft,
+                              proteinPerLb: DEFAULT_PROTEIN_PER_LB,
+                              fatPerLb: DEFAULT_FAT_PER_LB,
+                            })
+                          }
+                          className="text-xs font-medium text-brand-600 dark:text-brand-400"
+                        >
+                          Reset macros to defaults
+                        </button>
+                        <p className="text-xs text-fg-3">
+                          Grams per pound of bodyweight. Carbs fill the remaining
+                          calories.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   <p className="text-xs text-fg-3">
-                    Changing these creates a new targets entry effective today. Changing
-                    your goal also resets the rate-tracking baseline.
+                    {avgWeightLb !== null
+                      ? `Calories track your ${avgWeightLb.toFixed(1)} lb 7-day average and follow it as it changes.`
+                      : `Based on ${goalWeightLb.toFixed(1)} lb from your profile — log weigh-ins and this follows your 7-day average instead.`}
                   </p>
                   <div className="flex gap-2">
                     <button
