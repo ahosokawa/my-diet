@@ -41,7 +41,7 @@ type MealSnapshot =
       date: string;
       index: number;
       items: MealLogItem[];
-      totals: { kcal: number; proteinG: number; fatG: number; carbG: number };
+      totals: { kcal: number; proteinG: number; fatG: number; carbG: number; fiberG: number };
     }
   | { kind: "delete"; date: string; index: number };
 
@@ -54,6 +54,7 @@ type CustomDraft = {
   proteinPerServing: string;
   fatPerServing: string;
   carbPerServing: string;
+  fiberPerServing: string; // optional; blank means unknown, counted as 0
   unit: "g" | "ml";
   category: string;
 };
@@ -65,6 +66,7 @@ const EMPTY_CUSTOM: CustomDraft = {
   proteinPerServing: "",
   fatPerServing: "",
   carbPerServing: "",
+  fiberPerServing: "",
   unit: "g",
   category: "other",
 };
@@ -271,13 +273,16 @@ function MealDetail() {
     const protein = Number(customDraft.proteinPerServing);
     const fat = Number(customDraft.fatPerServing);
     const carb = Number(customDraft.carbPerServing);
+    const hasFiber = customDraft.fiberPerServing.trim() !== "";
+    const fiber = Number(customDraft.fiberPerServing);
     if (
       !customDraft.name.trim() ||
       !customDraft.servingSize.trim() ||
       !Number.isFinite(size) ||
       size <= 0 ||
       [customDraft.kcalPerServing, customDraft.proteinPerServing, customDraft.fatPerServing, customDraft.carbPerServing].some((v) => !v.trim()) ||
-      [kcal, protein, fat, carb].some((n) => !Number.isFinite(n) || n < 0)
+      [kcal, protein, fat, carb].some((n) => !Number.isFinite(n) || n < 0) ||
+      (hasFiber && (!Number.isFinite(fiber) || fiber < 0))
     )
       return;
     setSavingCustom(true);
@@ -288,6 +293,7 @@ function MealDetail() {
       proteinPer100: round1(protein * factor),
       fatPer100: round1(fat * factor),
       carbPer100: round1(carb * factor),
+      ...(hasFiber ? { fiberPer100: round1(fiber * factor) } : {}),
       unit: customDraft.unit,
       category: customDraft.category,
     });
@@ -350,12 +356,13 @@ function MealDetail() {
   }
 
   const actual = useMemo(() => {
-    if (selected.length === 0) return { kcal: 0, proteinG: 0, fatG: 0, carbG: 0 };
+    if (selected.length === 0) return { kcal: 0, proteinG: 0, fatG: 0, carbG: 0, fiberG: 0 };
     return macrosFor(
       selected.map((s) => ({
         proteinPer100: s.food.proteinPer100,
         fatPer100: s.food.fatPer100,
         carbPer100: s.food.carbPer100,
+        fiberPer100: s.food.fiberPer100,
       })),
       selected.map((s) => s.grams)
     );
@@ -640,7 +647,8 @@ function MealDetail() {
                   <div className="truncate text-sm font-semibold">{f.name}</div>
                   <div className="truncate text-xs tabular-nums text-fg-3">
                     {f.kcalPer100} kcal · {f.proteinPer100}P · {f.fatPer100}F ·{" "}
-                    {f.carbPer100}C / 100{f.unit}
+                    {f.carbPer100}C
+                    {f.fiberPer100 ? ` · ${f.fiberPer100}Fb` : ""} / 100{f.unit}
                   </div>
                 </button>
                 <span
@@ -794,6 +802,20 @@ function MealDetail() {
                   onChange={(e) => {
                     if (DECIMAL_RE.test(e.target.value))
                       setCustomDraft({ ...customDraft, carbPerServing: e.target.value });
+                  }}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-fg-3">Fiber (g)</label>
+                <input
+                  inputMode="decimal"
+                  aria-label="Fiber per serving"
+                  className="input"
+                  placeholder="Optional"
+                  value={customDraft.fiberPerServing}
+                  onChange={(e) => {
+                    if (DECIMAL_RE.test(e.target.value))
+                      setCustomDraft({ ...customDraft, fiberPerServing: e.target.value });
                   }}
                 />
               </div>

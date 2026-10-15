@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { normalizeTables, withFoodDefaults, withProfileDefaults, withTargetsDefaults } from "../defaults";
+import { mealLogFiberG, normalizeTables, withFoodDefaults, withProfileDefaults, withTargetsDefaults } from "../defaults";
 import type { EnvelopeTables } from "@/lib/backup/envelope";
-import type { Food, Profile, Targets } from "../schema";
+import type { Food, MealLog, Profile, Targets } from "../schema";
 
 // Rows as they'd appear in a pre-v6 backup: fields added by later schema
 // versions are absent at runtime even though the TS types require them.
@@ -85,6 +85,34 @@ describe("withFoodDefaults", () => {
     expect(milk.unit).toBe("ml");
     expect(milk.favorite).toBe(1);
   });
+
+  it("fills v9 fiber for builtins from the seed list, not for custom foods", () => {
+    const oats = withFoodDefaults({ ...v1Food, slug: "oats-dry", unit: "g" });
+    expect(oats.fiberPer100).toBe(10.1);
+    const custom = withFoodDefaults({ ...v1Food, slug: "custom-1", builtin: 0 });
+    expect(custom.fiberPer100).toBeUndefined();
+    const kept = withFoodDefaults({ ...v1Food, slug: "oats-dry", fiberPer100: 9 });
+    expect(kept.fiberPer100).toBe(9);
+  });
+});
+
+describe("mealLogFiberG", () => {
+  it("counts foods without fiber, and deleted foods, as 0", () => {
+    const foods = [
+      { ...v1Food, id: 1, fiberPer100: 10 },
+      { ...v1Food, id: 2 },
+    ];
+    expect(
+      mealLogFiberG(
+        [
+          { foodId: 1, grams: 55 },
+          { foodId: 2, grams: 100 },
+          { foodId: 3, grams: 100 },
+        ],
+        foods
+      )
+    ).toBe(5.5);
+  });
 });
 
 describe("normalizeTables", () => {
@@ -107,5 +135,32 @@ describe("normalizeTables", () => {
     expect(out.weights).toBe(tables.weights);
     // Sorting by favorite must not NaN-compare after normalization.
     expect(out.foods[0].favorite - out.foods[0].favorite).toBe(0);
+  });
+
+  it("backfills meal log fiber from the normalized builtin foods", () => {
+    const oats = { ...v1Food, id: 7, slug: "oats-dry", unit: "g" } as Food;
+    const log = {
+      id: 1,
+      date: "2025-06-01",
+      index: 0,
+      items: [{ foodId: 7, grams: 50 }],
+      kcal: 0,
+      proteinG: 0,
+      fatG: 0,
+      carbG: 0,
+      loggedAt: 0,
+    } as MealLog;
+    const out = normalizeTables({
+      profile: [],
+      targets: [],
+      foods: [oats],
+      schedule: [],
+      mealLogs: [log, { ...log, id: 2, fiberG: 3 }],
+      weights: [],
+      combos: [],
+      prefs: [],
+    });
+    expect(out.mealLogs[0].fiberG).toBe(5.1);
+    expect(out.mealLogs[1].fiberG).toBe(3);
   });
 });

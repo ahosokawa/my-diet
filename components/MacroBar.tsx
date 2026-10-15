@@ -42,9 +42,12 @@ export function MacroBar({
 export function MacroRow({
   target,
   current,
+  fiberG,
 }: {
   target: { proteinG: number; fatG: number; carbG: number; kcal: number };
   current: { proteinG: number; fatG: number; carbG: number; kcal: number };
+  // Fiber has no target, so it's a plain total rather than a bar. Omit to hide.
+  fiberG?: number;
 }) {
   return (
     <div
@@ -63,6 +66,16 @@ export function MacroRow({
       <MacroBar label="Protein" current={current.proteinG} target={target.proteinG} color="#26a55e" />
       <MacroBar label="Fat" current={current.fatG} target={target.fatG} color="#f59e0b" />
       <MacroBar label="Carbs" current={current.carbG} target={target.carbG} color="#3b82f6" />
+      {fiberG !== undefined && (
+        <div
+          className="flex justify-between text-xs font-medium text-fg-2"
+          data-macro="fiber"
+          data-current={Math.round(fiberG)}
+        >
+          <span>Fiber</span>
+          <span className="tabular-nums">{Math.round(fiberG)} g</span>
+        </div>
+      )}
     </div>
   );
 }

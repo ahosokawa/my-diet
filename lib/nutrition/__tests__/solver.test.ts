@@ -60,5 +60,20 @@ describe("macrosFor", () => {
     expect(result.fatG).toBe(7.2);
     expect(result.carbG).toBe(0);
     expect(result.kcal).toBe(Math.round(62 * 4 + 7.2 * 9 + 0));
+    expect(result.fiberG).toBe(0);
+  });
+
+  it("totals fiber without adding it to kcal", () => {
+    const foods = [
+      { proteinPer100: 13, fatPer100: 6.5, carbPer100: 68, fiberPer100: 10.1 },
+      { proteinPer100: 1, fatPer100: 0, carbPer100: 23, fiberPer100: 2.6 },
+    ];
+    const withFiber = macrosFor(foods, [80, 120]);
+    const withoutFiber = macrosFor(
+      foods.map(({ fiberPer100: _, ...f }) => f),
+      [80, 120]
+    );
+    expect(withFiber.fiberG).toBe(11.2);
+    expect(withFiber.kcal).toBe(withoutFiber.kcal);
   });
 });

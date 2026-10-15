@@ -15,6 +15,8 @@ export type FoodMacros = {
   proteinPer100: number;
   fatPer100: number;
   carbPer100: number;
+  // Display-only: fiber is already inside carbs, so the solver ignores it.
+  fiberPer100?: number;
 };
 
 export type SolverTarget = {
@@ -137,16 +139,19 @@ function maxOf(idx: number[], arr: number[]): number {
 export function macrosFor(foods: FoodMacros[], grams: number[]) {
   let p = 0,
     f = 0,
-    c = 0;
+    c = 0,
+    fb = 0;
   for (let i = 0; i < foods.length; i++) {
     p += (foods[i].proteinPer100 * grams[i]) / 100;
     f += (foods[i].fatPer100 * grams[i]) / 100;
     c += (foods[i].carbPer100 * grams[i]) / 100;
+    fb += ((foods[i].fiberPer100 ?? 0) * grams[i]) / 100;
   }
   return {
     proteinG: round1(p),
     fatG: round1(f),
     carbG: round1(c),
+    fiberG: round1(fb),
     kcal: Math.round(p * KCAL.protein + f * KCAL.fat + c * KCAL.carb),
   };
 }

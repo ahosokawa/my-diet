@@ -4,6 +4,7 @@ import type { Goal } from "../nutrition/macros";
 import { maintenanceKcal } from "../nutrition/maintenance";
 import { rateForKcal } from "../nutrition/rate";
 import { DB_SCHEMA_VERSION } from "./version";
+import { builtinFiberPer100, mealLogFiberG } from "./defaults";
 
 export type { Goal };
 
@@ -44,6 +45,9 @@ export type Food = {
   proteinPer100: number;
   fatPer100: number;
   carbPer100: number;
+  // Optional: custom foods may omit it; missing counts as 0. Not indexed, so
+  // adding it needed no store change (v9 only backfills builtin rows).
+  fiberPer100?: number;
   unit: "g" | "ml";
   builtin: 0 | 1;
   favorite: 0 | 1;
@@ -79,6 +83,7 @@ export type MealLog = {
   proteinG: number;
   fatG: number;
   carbG: number;
+  fiberG?: number; // v9; display-only, already counted in carbG
   loggedAt: number;
 };
 
@@ -186,6 +191,21 @@ class MyDietDb extends Dexie {
         t.rateLbPerWeek = p
           ? rateForKcal(maintenanceKcal(p, p.weightLb), t.kcal)
           : 0;
+      });
+    });
+    this.version(9).upgrade(async (tx) => {
+      // Fiber tracking. syncBuiltinFoods never touches existing rows, so
+      // builtins installed before this release get their seed fiber here;
+      // then every meal log's fiber is recomputed from its items.
+      await tx.table("foods").toCollection().modify((f: Food) => {
+        if (f.fiberPer100 === undefined && f.builtin === 1) {
+          const fiber = builtinFiberPer100(f.slug);
+          if (fiber !== undefined) f.fiberPer100 = fiber;
+        }
+      });
+      const foods: Food[] = await tx.table("foods").toArray();
+      await tx.table("mealLogs").toCollection().modify((m: MealLog) => {
+        if (m.fiberG === undefined) m.fiberG = mealLogFiberG(m.items, foods);
       });
     });
   }

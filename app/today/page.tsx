@@ -116,9 +116,10 @@ function TodayView() {
         proteinG: acc.proteinG + m.logged.proteinG,
         fatG: acc.fatG + m.logged.fatG,
         carbG: acc.carbG + m.logged.carbG,
+        fiberG: acc.fiberG + (m.logged.fiberG ?? 0),
       };
     },
-    { kcal: 0, proteinG: 0, fatG: 0, carbG: 0 }
+    { kcal: 0, proteinG: 0, fatG: 0, carbG: 0, fiberG: 0 }
   );
   const loggedCount = meals.filter((m) => m.logged).length;
 
@@ -205,7 +206,7 @@ function TodayView() {
                       {loggedCount} / {meals.length} logged
                     </span>
                   </div>
-                  <MacroRow target={totalTarget} current={totalActual} />
+                  <MacroRow target={totalTarget} current={totalActual} fiberG={totalActual.fiberG} />
                 </div>
 
                 <div className="space-y-3">

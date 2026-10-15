@@ -61,6 +61,8 @@ test.describe("Meal logging", () => {
     expect(await readNumberAttr(dailyTotals, "data-kcal-current")).toBeGreaterThan(0);
     const protein = await readMacro(dailyTotals, "protein");
     expect(protein.current).toBeGreaterThan(0);
+    // Fiber is a plain total with no target; chicken has none.
+    await expect(dailyTotals.locator('[data-macro="fiber"]')).toHaveText(/Fiber\s*0 g/);
   });
 
   test("creates a custom food inline and logs it", async ({ page }) => {
