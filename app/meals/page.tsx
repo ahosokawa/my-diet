@@ -15,7 +15,8 @@ import { createSaveQueue, type SaveQueue, type SyncState } from "@/lib/ui/save-q
 import {
   addCustomFood,
   deleteMealLog,
-  getMealLog,
+  deleteSnack,
+  getSnack,
   listFoods,
   logMeal,
   listCombos,
@@ -23,11 +24,12 @@ import {
   deleteCombo,
   toggleFavoriteFood,
   getFoodsByIds,
+  saveSnack,
 } from "@/lib/db/repos";
 import type { Combo, Food, MealLogItem } from "@/lib/db/schema";
 import { getDayPlan } from "@/lib/plan/day-plan";
 import { solvePortions, macrosFor, type FoodMacros } from "@/lib/nutrition/solver";
-import { todayStr } from "@/lib/date";
+import { minutesToHhmm, todayStr } from "@/lib/date";
 import { rankFoods } from "@/lib/ui/food-search";
 
 type Selection = { food: Food; grams: number; locked: boolean };
@@ -35,15 +37,23 @@ type Selection = { food: Food; grams: number; locked: boolean };
 // Autosave snapshots carry their own date/index: navigating between meals
 // re-uses the same component instance, so a pending write must target the
 // meal it was made on, not whichever meal is current when it lands.
+type Totals = { kcal: number; proteinG: number; fatG: number; carbG: number; fiberG: number };
+
+// Snack snapshots carry `draft` instead of an id until the first save creates
+// the row; later snapshots for the same draft resolve to that id.
 type MealSnapshot =
+  | { kind: "put"; date: string; index: number; items: MealLogItem[]; totals: Totals }
+  | { kind: "delete"; date: string; index: number }
   | {
-      kind: "put";
+      kind: "snackPut";
+      id: number | null;
+      draft: string;
       date: string;
-      index: number;
+      time: string;
       items: MealLogItem[];
-      totals: { kcal: number; proteinG: number; fatG: number; carbG: number; fiberG: number };
+      totals: Totals;
     }
-  | { kind: "delete"; date: string; index: number };
+  | { kind: "snackDelete"; id: number | null; draft: string };
 
 type CustomDraft = {
   name: string;
@@ -80,6 +90,12 @@ function MealDetail() {
   const params = useSearchParams();
   const date = params.get("d") ?? todayStr();
   const mealIndex = Number(params.get("i") ?? "0");
+  // `?snack=<id>` edits a snack; `?snack=new` starts one. Snack mode is the
+  // same picker with no target, no solver, and no locks.
+  const snackParam = params.get("snack");
+  const isSnack = snackParam !== null;
+  const snackId = isSnack && snackParam !== "new" ? Number(snackParam) : null;
+  const pageKey = isSnack ? `${date}:snack:${snackParam}` : `${date}:${mealIndex}`;
 
   const [allFoods, setAllFoods] = useState<Food[]>([]);
   const [combos, setCombos] = useState<Combo[]>([]);
@@ -95,19 +111,42 @@ function MealDetail() {
   const [customDraft, setCustomDraft] = useState<CustomDraft>(EMPTY_CUSTOM);
   const [savingCustom, setSavingCustom] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [snackTime, setSnackTime] = useState("12:00");
+  const [snackMissing, setSnackMissing] = useState(false);
 
+  // Draft key → id of the snack row its first save created.
+  const createdSnacks = useRef(new Map<string, number>());
+  const snackDraft = useRef("");
   const queueRef = useRef<SaveQueue<MealSnapshot> | null>(null);
   if (!queueRef.current) {
     queueRef.current = createSaveQueue<MealSnapshot>(
       async (snap) => {
         if (snap.kind === "delete") await deleteMealLog(snap.date, snap.index);
-        else await logMeal({ date: snap.date, index: snap.index, items: snap.items, ...snap.totals });
+        else if (snap.kind === "put")
+          await logMeal({ date: snap.date, index: snap.index, items: snap.items, ...snap.totals });
+        else {
+          const created = createdSnacks.current;
+          const id = snap.id ?? created.get(snap.draft) ?? null;
+          if (snap.kind === "snackDelete") {
+            if (id != null) await deleteSnack(id);
+            created.delete(snap.draft);
+          } else {
+            const saved = await saveSnack({
+              ...(id != null ? { id } : {}),
+              date: snap.date,
+              time: snap.time,
+              items: snap.items,
+              ...snap.totals,
+            });
+            if (snap.id == null) created.set(snap.draft, saved);
+          }
+        }
       },
       { delayMs: 600, onState: setSyncState }
     );
   }
   const queue = queueRef.current;
-  // Set to the current `${date}:${mealIndex}` on the first autosave-effect run
+  // Set to the current `pageKey` on the first autosave-effect run
   // after hydration, so rehydrated state isn't immediately re-written.
   const hydratedFor = useRef<string | null>(null);
   const rebalanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,11 +164,45 @@ function MealDetail() {
     // A pending write may still target the previous meal — land it first.
     void queue.flush();
     (async () => {
-      const [plan, foods, cs, log] = await Promise.all([
-        getDayPlan(date),
+      if (isSnack) {
+        const [foods, snack] = await Promise.all([
+          listFoods(),
+          snackId != null ? getSnack(snackId) : Promise.resolve(undefined),
+        ]);
+        if (cancelled) return;
+        setAllFoods(foods);
+        setTarget(null);
+        snackDraft.current = `${pageKey}:${Date.now()}`;
+        setSnackMissing(snackId != null && !snack);
+        if (snack) {
+          setSnackTime(snack.time);
+        } else {
+          const now = new Date();
+          setSnackTime(
+            date === todayStr()
+              ? minutesToHhmm(now.getHours() * 60 + now.getMinutes())
+              : "12:00"
+          );
+        }
+        const byId = new Map(foods.map((f) => [f.id!, f]));
+        setSelected(
+          (snack?.items ?? [])
+            .map((it) => {
+              const f = byId.get(it.foodId);
+              return f ? { food: f, grams: it.grams, locked: false } : null;
+            })
+            .filter((s): s is Selection => s !== null)
+        );
+        setLoading(false);
+        return;
+      }
+
+      const [plan, foods, cs] = await Promise.all([
+        // Plan this meal as if it were empty, so its target is its share of
+        // what's left after the rest of the day's food.
+        getDayPlan(date, { openIndex: mealIndex }),
         listFoods(),
         listCombos(),
-        getMealLog(date, mealIndex),
       ]);
       if (cancelled) return;
       setAllFoods(foods);
@@ -140,6 +213,7 @@ function MealDetail() {
       }
       setTarget(plan.mealTargets[mealIndex] ?? null);
 
+      const log = plan.logs.find((l) => l.index === mealIndex);
       if (log && log.items.length > 0) {
         const byId = new Map(foods.map((f) => [f.id!, f]));
         const sel: Selection[] = log.items
@@ -159,7 +233,7 @@ function MealDetail() {
       cancelled = true;
       if (rebalanceTimer.current) clearTimeout(rebalanceTimer.current);
     };
-  }, [date, mealIndex, queue]);
+  }, [date, mealIndex, isSnack, snackId, pageKey, queue]);
 
   // Flush pending writes when the page is hidden or the component unmounts —
   // the PWA can be killed without warning (mirrors lib/backup/scheduler.ts).
@@ -236,9 +310,10 @@ function MealDetail() {
       if (!cur || cur.grams === grams) return;
       setSelected((prev) =>
         prev.map((s) =>
-          s.food.id === foodId ? { ...s, grams, locked: true } : s
+          s.food.id === foodId ? { ...s, grams, locked: !isSnack } : s
         )
       );
+      if (isSnack) return;
       // The edited food is locked at its value synchronously; re-solving the
       // other foods is debounced so stepper bursts don't make rows flicker.
       if (rebalanceTimer.current) clearTimeout(rebalanceTimer.current);
@@ -247,7 +322,7 @@ function MealDetail() {
         setSelected((prev) => balance(prev));
       }, 350);
     },
-    [balance, selected]
+    [balance, selected, isSnack]
   );
 
   const toggleLock = useCallback((foodId: number) => {
@@ -371,11 +446,27 @@ function MealDetail() {
   // Live-sync: every change to the meal persists (debounced). A meal with
   // foods is logged; removing the last food deletes the log row.
   useEffect(() => {
-    if (loading || !target) return;
-    const key = `${date}:${mealIndex}`;
-    if (hydratedFor.current !== key) {
+    if (loading || (isSnack ? snackMissing : !target)) return;
+    if (hydratedFor.current !== pageKey) {
       // First run after (re)hydration — state mirrors the DB, nothing to save.
-      hydratedFor.current = key;
+      hydratedFor.current = pageKey;
+      return;
+    }
+    if (isSnack) {
+      const draft = snackDraft.current;
+      if (selected.length === 0) {
+        queue.push({ kind: "snackDelete", id: snackId, draft });
+      } else {
+        queue.push({
+          kind: "snackPut",
+          id: snackId,
+          draft,
+          date,
+          time: snackTime,
+          items: selected.map((s) => ({ foodId: s.food.id!, grams: s.grams })),
+          totals: actual,
+        });
+      }
       return;
     }
     if (selected.length === 0) {
@@ -393,7 +484,7 @@ function MealDetail() {
         totals: actual,
       });
     }
-  }, [selected, loading, target, date, mealIndex, actual, queue]);
+  }, [selected, loading, target, date, mealIndex, actual, queue, isSnack, snackMissing, pageKey, snackId, snackTime]);
 
   async function handleDone() {
     await queue.flush();
@@ -408,16 +499,33 @@ function MealDetail() {
 
   const backHref = date === todayStr() ? "/today" : `/today?d=${date}`;
 
+  const title = isSnack ? "Snack" : `Meal ${mealIndex + 1}`;
+
   if (loading) {
     return (
       <main className="flex-1 overflow-y-auto">
-        <Header title="Meal" back={backHref} />
+        <Header title={isSnack ? "Snack" : "Meal"} back={backHref} />
         <p className="mt-12 text-center text-fg-3">Loading…</p>
       </main>
     );
   }
 
-  if (!target) {
+  if (isSnack && snackMissing) {
+    return (
+      <main className="flex-1 overflow-y-auto">
+        <Header title="Snack" back={backHref} />
+        <div className="mx-4 mt-12 rounded-xl bg-surface-2 p-6 text-center">
+          <p className="font-semibold">Snack not found</p>
+          <p className="mt-1 text-sm text-fg-3">It may have been deleted.</p>
+          <button className="btn-secondary mt-4" onClick={() => router.push(backHref)}>
+            Back to day
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (!isSnack && !target) {
     return (
       <main className="flex-1 overflow-y-auto">
         <Header title="Meal" back={backHref} />
@@ -437,31 +545,72 @@ function MealDetail() {
   return (
     <>
       <main className="relative flex-1 overflow-y-auto">
-        <Header title={`Meal ${mealIndex + 1}`} back={backHref} />
+        <Header title={title} back={backHref} />
 
         <div className="px-4 pb-40 pt-2">
-          <div className="card mb-4">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-3">Target</h3>
-            <MacroRow target={target} current={actual} />
-          </div>
+          {isSnack ? (
+            <div className="card mb-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="snack-time" className="text-sm font-medium text-fg-2">
+                  Time
+                </label>
+                <input
+                  id="snack-time"
+                  type="time"
+                  aria-label="Snack time"
+                  className="input w-auto tabular-nums"
+                  value={snackTime}
+                  onChange={(e) => {
+                    if (e.target.value) setSnackTime(e.target.value);
+                  }}
+                />
+              </div>
+              <div
+                data-snack-totals
+                className="flex items-baseline justify-between border-t border-hairline pt-3"
+              >
+                <span className="text-sm font-medium text-fg-2">Total</span>
+                <span className="flex gap-3 text-sm tabular-nums text-fg-2">
+                  <span className="font-semibold text-fg-1">{actual.kcal} kcal</span>
+                  <span>{Math.round(actual.proteinG)}P</span>
+                  <span>{Math.round(actual.fatG)}F</span>
+                  <span>{Math.round(actual.carbG)}C</span>
+                </span>
+              </div>
+              <p className="text-xs text-fg-3">
+                Comes off today's remaining targets — empty meals rebalance around it.
+              </p>
+            </div>
+          ) : (
+            target && (
+              <div className="card mb-4">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-3">Target</h3>
+                <MacroRow target={target} current={actual} />
+              </div>
+            )
+          )}
 
           {selected.length > 0 && (
             <div className="card mb-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold">Foods</h3>
                 <div className="flex items-center gap-1">
-                  <button
-                    className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 active:bg-brand-100 dark:bg-brand-900/30 dark:text-brand-300"
-                    onClick={autoBalance}
-                  >
-                    <Sparkles className="h-4 w-4" /> Balance
-                  </button>
-                  <button
-                    className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-fg-2 active:bg-surface-3"
-                    onClick={() => setShowSaveCombo(true)}
-                  >
-                    <Copy className="h-4 w-4" /> Save
-                  </button>
+                  {!isSnack && (
+                    <>
+                      <button
+                        className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 active:bg-brand-100 dark:bg-brand-900/30 dark:text-brand-300"
+                        onClick={autoBalance}
+                      >
+                        <Sparkles className="h-4 w-4" /> Balance
+                      </button>
+                      <button
+                        className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-fg-2 active:bg-surface-3"
+                        onClick={() => setShowSaveCombo(true)}
+                      >
+                        <Copy className="h-4 w-4" /> Save
+                      </button>
+                    </>
+                  )}
                   <button
                     className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium text-red-600 active:bg-surface-3 dark:text-red-400"
                     onClick={clearMeal}
@@ -496,27 +645,29 @@ function MealDetail() {
                         unit={s.food.unit}
                       />
                     </div>
-                    <button
-                      aria-pressed={s.locked}
-                      onClick={() => toggleLock(s.food.id!)}
-                      title={
-                        s.locked
-                          ? "Locked — auto-balance will not change"
-                          : "Tap to lock portion"
-                      }
-                      className={`inline-flex h-11 items-center gap-1 rounded-full px-3 text-xs font-semibold transition-colors ${
-                        s.locked
-                          ? "bg-amber-100 text-amber-700 active:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300"
-                          : "text-fg-3 active:bg-surface-3"
-                      }`}
-                    >
-                      {s.locked ? (
-                        <Lock className="h-4 w-4" />
-                      ) : (
-                        <LockOpen className="h-4 w-4" />
-                      )}
-                      {s.locked ? "Locked" : "Lock"}
-                    </button>
+                    {!isSnack && (
+                      <button
+                        aria-pressed={s.locked}
+                        onClick={() => toggleLock(s.food.id!)}
+                        title={
+                          s.locked
+                            ? "Locked — auto-balance will not change"
+                            : "Tap to lock portion"
+                        }
+                        className={`inline-flex h-11 items-center gap-1 rounded-full px-3 text-xs font-semibold transition-colors ${
+                          s.locked
+                            ? "bg-amber-100 text-amber-700 active:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300"
+                            : "text-fg-3 active:bg-surface-3"
+                        }`}
+                      >
+                        {s.locked ? (
+                          <Lock className="h-4 w-4" />
+                        ) : (
+                          <LockOpen className="h-4 w-4" />
+                        )}
+                        {s.locked ? "Locked" : "Lock"}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -525,7 +676,9 @@ function MealDetail() {
 
           {selected.length === 0 && (
             <div className="card mb-4 text-center text-sm text-fg-3">
-              Add a food or load a combo to start building this meal.
+              {isSnack
+                ? "Add the foods you ate."
+                : "Add a food or load a combo to start building this meal."}
             </div>
           )}
         </div>
@@ -542,7 +695,7 @@ function MealDetail() {
           >
             <Plus className="h-4 w-4" /> Add food
           </button>
-          {combos.length > 0 && (
+          {!isSnack && combos.length > 0 && (
             <button
               className="btn-secondary flex flex-1 items-center justify-center gap-1 text-sm"
               onClick={() => setShowCombos(true)}

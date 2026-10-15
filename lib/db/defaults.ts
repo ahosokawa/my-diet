@@ -88,5 +88,8 @@ export function normalizeTables(tables: EnvelopeTables): EnvelopeTables {
     targets: tables.targets.map((t) => withTargetsDefaults(t, profile[0])),
     foods,
     mealLogs: tables.mealLogs.map((m) => withMealLogDefaults(m, foods)),
+    // v10: snacks is a new table — parseEnvelope fills it as [] for older
+    // backups, and its rows have no later-added fields to default.
+    snacks: tables.snacks,
   };
 }

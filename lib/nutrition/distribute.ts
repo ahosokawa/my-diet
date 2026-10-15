@@ -24,7 +24,8 @@ export function distributeMeals(
   const evenF = daily.fatG / n;
 
   const pwIndex = slots.findIndex((s) => s.postWorkout);
-  const hasPw = pwIndex >= 0;
+  // A lone meal has no other meals to borrow carbs from — it gets them all.
+  const hasPw = pwIndex >= 0 && n > 1;
 
   let carbs: number[];
   if (!hasPw) {

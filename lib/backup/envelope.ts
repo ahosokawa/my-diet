@@ -5,6 +5,7 @@ import type {
   NotifPrefs,
   Profile,
   ScheduleDay,
+  Snack,
   Targets,
   WeightEntry,
 } from "@/lib/db/schema";
@@ -20,6 +21,7 @@ export type EnvelopeTables = {
   foods: Food[];
   schedule: ScheduleDay[];
   mealLogs: MealLog[];
+  snacks: Snack[]; // v10
   weights: WeightEntry[];
   combos: Combo[];
   prefs: NotifPrefs[];
@@ -51,6 +53,7 @@ const TABLE_KEYS: (keyof EnvelopeTables)[] = [
   "foods",
   "schedule",
   "mealLogs",
+  "snacks",
   "weights",
   "combos",
   "prefs",

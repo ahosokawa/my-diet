@@ -9,24 +9,60 @@ import { MacroRow } from "@/components/MacroBar";
 import { TabBar } from "@/components/TabBar";
 import { IconButton } from "@/components/ui/IconButton";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { ChevronLeft, ChevronRight, Check, Dumbbell } from "@/components/ui/Icon";
+import { ChevronLeft, ChevronRight, Check, Dumbbell, Plus } from "@/components/ui/Icon";
 import {
-  getMealLogsForDate,
   getReviewState,
   syncBuiltinFoods,
   syncTargetsToWeight,
 } from "@/lib/db/repos";
-import type { Targets, MealLog } from "@/lib/db/schema";
+import type { Targets, MealLog, Snack } from "@/lib/db/schema";
+import type { MacroOverage } from "@/lib/plan/remaining";
 import { getDayPlan } from "@/lib/plan/day-plan";
 import { parseYmd, shiftDate, todayStr } from "@/lib/date";
+
+type Macros = { kcal: number; proteinG: number; fatG: number; carbG: number };
 
 type MealCard = {
   index: number;
   time: string;
   postWorkout: boolean;
-  target: { kcal: number; proteinG: number; fatG: number; carbG: number };
+  // Live remaining share for empty meals; null once logged.
+  target: Macros | null;
   logged?: MealLog;
 };
+
+type TimelineEntry =
+  | { kind: "meal"; time: string; meal: MealCard }
+  | { kind: "snack"; time: string; snack: Snack };
+
+const MACRO_NAMES: Record<keyof MacroOverage, string> = {
+  proteinG: "Protein",
+  fatG: "Fat",
+  carbG: "Carbs",
+};
+
+function overageNote(over: MacroOverage, emptyMeals: number): string | null {
+  const keys = (Object.keys(MACRO_NAMES) as (keyof MacroOverage)[]).filter(
+    (k) => over[k] > 0
+  );
+  if (keys.length === 0) return null;
+  const parts = keys.map((k) => `${MACRO_NAMES[k]} over by ${over[k]}g`);
+  const head = parts.join(", ");
+  if (emptyMeals === 0) return head;
+  const zeros = keys.map((k) => `0g ${MACRO_NAMES[k].toLowerCase()}`).join(", ");
+  return `${head} — remaining meals get ${zeros}`;
+}
+
+function MacroLine({ m }: { m: Macros }) {
+  return (
+    <div className="mt-2 flex gap-3 text-xs text-fg-2 tabular-nums">
+      <span className="font-medium text-fg-1">{Math.round(m.kcal)}</span>
+      <span>{Math.round(m.proteinG)}P</span>
+      <span>{Math.round(m.fatG)}F</span>
+      <span>{Math.round(m.carbG)}C</span>
+    </div>
+  );
+}
 
 function formatDate(s: string): string {
   const today = todayStr();
@@ -50,6 +86,8 @@ function TodayView() {
   const scrollRef = useRef<HTMLElement>(null);
   const [targets, setTargets] = useState<Targets | null>(null);
   const [meals, setMeals] = useState<MealCard[]>([]);
+  const [snacks, setSnacks] = useState<Snack[]>([]);
+  const [over, setOver] = useState<MacroOverage>({ proteinG: 0, fatG: 0, carbG: 0 });
   const [reviewPending, setReviewPending] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -61,10 +99,7 @@ function TodayView() {
       // with the latest weigh-ins before reading the day's plan off it.
       await syncTargetsToWeight().catch(() => false);
       if (cancelled) return;
-      const [plan, logs] = await Promise.all([
-        getDayPlan(date),
-        getMealLogsForDate(date),
-      ]);
+      const plan = await getDayPlan(date);
       if (cancelled) return;
       if (!plan) {
         setLoading(false);
@@ -77,9 +112,11 @@ function TodayView() {
         time: s.time,
         postWorkout: s.postWorkout,
         target: plan.mealTargets[i],
-        logged: logs.find((l) => l.index === i),
+        logged: plan.logs.find((l) => l.index === i && l.items.length > 0),
       }));
       setMeals(cards);
+      setSnacks(plan.snacks);
+      setOver(plan.over);
       setLoading(false);
     })();
     return () => {
@@ -108,20 +145,32 @@ function TodayView() {
     ? { kcal: targets.kcal, proteinG: targets.proteinG, fatG: targets.fatG, carbG: targets.carbG }
     : { kcal: 0, proteinG: 0, fatG: 0, carbG: 0 };
 
-  const totalActual = meals.reduce(
-    (acc, m) => {
-      if (!m.logged) return acc;
-      return {
-        kcal: acc.kcal + m.logged.kcal,
-        proteinG: acc.proteinG + m.logged.proteinG,
-        fatG: acc.fatG + m.logged.fatG,
-        carbG: acc.carbG + m.logged.carbG,
-        fiberG: acc.fiberG + (m.logged.fiberG ?? 0),
-      };
-    },
+  const eaten: (Macros & { fiberG?: number })[] = [
+    ...meals.flatMap((m) => (m.logged ? [m.logged] : [])),
+    ...snacks,
+  ];
+  const totalActual = eaten.reduce<Macros & { fiberG: number }>(
+    (acc, e) => ({
+      kcal: acc.kcal + e.kcal,
+      proteinG: acc.proteinG + e.proteinG,
+      fatG: acc.fatG + e.fatG,
+      carbG: acc.carbG + e.carbG,
+      fiberG: acc.fiberG + (e.fiberG ?? 0),
+    }),
     { kcal: 0, proteinG: 0, fatG: 0, carbG: 0, fiberG: 0 }
   );
   const loggedCount = meals.filter((m) => m.logged).length;
+  const overNote = overageNote(over, meals.length - loggedCount);
+
+  // Meals and snacks in time order; a snack at a meal's exact time sorts after it.
+  const timeline: TimelineEntry[] = [
+    ...meals.map((m): TimelineEntry => ({ kind: "meal", time: m.time, meal: m })),
+    ...snacks.map((s): TimelineEntry => ({ kind: "snack", time: s.time, snack: s })),
+  ].sort(
+    (a, b) =>
+      a.time.localeCompare(b.time) ||
+      (a.kind === b.kind ? 0 : a.kind === "meal" ? -1 : 1)
+  );
 
   function go(d: string) {
     if (d === todayStr()) router.replace("/today");
@@ -207,15 +256,41 @@ function TodayView() {
                     </span>
                   </div>
                   <MacroRow target={totalTarget} current={totalActual} fiberG={totalActual.fiberG} />
+                  {overNote && (
+                    <p
+                      data-overage
+                      className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                    >
+                      {overNote}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-3">
-                  {meals.map((m) => {
-                    const logged = !!m.logged;
+                  {timeline.map((e) => {
+                    if (e.kind === "snack") {
+                      const sn = e.snack;
+                      return (
+                        <Link
+                          key={`s${sn.id}`}
+                          href={`/meals?d=${date}&snack=${sn.id}`}
+                          data-snack-card
+                          className="card block transition-transform active:scale-[0.99]"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold">Snack</span>
+                            <span className="text-sm text-fg-3 tabular-nums">{sn.time}</span>
+                          </div>
+                          <MacroLine m={sn} />
+                        </Link>
+                      );
+                    }
+                    const m = e.meal;
                     return (
                       <Link
-                        key={m.index}
+                        key={`m${m.index}`}
                         href={`/meals?d=${date}&i=${m.index}`}
+                        data-meal-card={m.index}
                         className="card block transition-transform active:scale-[0.99]"
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -229,23 +304,29 @@ function TodayView() {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-sm text-fg-3 tabular-nums">{m.time}</span>
-                            {logged && (
+                            {!!m.logged && (
                               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand-500 text-white">
                                 <Check className="h-4 w-4" strokeWidth={3} />
                               </span>
                             )}
                           </div>
                         </div>
-                        <div className="mt-2 flex gap-3 text-xs text-fg-2 tabular-nums">
-                          <span className="font-medium text-fg-1">{m.target.kcal}</span>
-                          <span>{m.target.proteinG}P</span>
-                          <span>{m.target.fatG}F</span>
-                          <span>{m.target.carbG}C</span>
-                        </div>
+                        {m.logged ? (
+                          <MacroLine m={m.logged} />
+                        ) : (
+                          m.target && <MacroLine m={m.target} />
+                        )}
                       </Link>
                     );
                   })}
                 </div>
+
+                <Link
+                  href={`/meals?d=${date}&snack=new`}
+                  className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-brand-50 py-3 text-sm font-semibold text-brand-700 transition-transform active:scale-[0.99] active:bg-brand-100 dark:bg-brand-900/30 dark:text-brand-300 dark:active:bg-brand-900/50"
+                >
+                  <Plus className="h-4 w-4" strokeWidth={2.4} /> Snack
+                </Link>
               </>
             )}
           </motion.div>

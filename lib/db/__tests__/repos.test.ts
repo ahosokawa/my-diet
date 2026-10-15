@@ -4,6 +4,9 @@ import { db } from "../schema";
 import {
   addWeight,
   deleteMealLog,
+  deleteSnack,
+  getSnack,
+  getSnacksForDate,
   getCurrentTargets,
   getProfile,
   getReviewState,
@@ -11,6 +14,7 @@ import {
   listFoods,
   logMeal,
   saveProfile,
+  saveSnack,
   saveTargets,
   syncBuiltinFoods,
   syncTargetsToWeight,
@@ -160,6 +164,40 @@ describe("deleteMealLog", () => {
     await logMeal(entry);
     await deleteMealLog("2026-07-08", 5);
     expect(await db.mealLogs.count()).toBe(1);
+  });
+});
+
+describe("snacks", () => {
+  const snack = {
+    date: "2026-07-08",
+    time: "15:00",
+    items: [{ foodId: 1, grams: 30 }],
+    kcal: 160,
+    proteinG: 6,
+    fatG: 14,
+    carbG: 6,
+    fiberG: 3,
+  };
+
+  it("creates without an id and updates in place with one", async () => {
+    const id = await saveSnack(snack);
+    expect(await saveSnack({ ...snack, id, kcal: 200 })).toBe(id);
+    expect(await db.snacks.count()).toBe(1);
+    expect((await getSnack(id))?.kcal).toBe(200);
+  });
+
+  it("lists a day's snacks in time order", async () => {
+    await saveSnack({ ...snack, time: "21:00" });
+    await saveSnack({ ...snack, time: "10:30" });
+    await saveSnack({ ...snack, date: "2026-07-09" });
+    const rows = await getSnacksForDate("2026-07-08");
+    expect(rows.map((r) => r.time)).toEqual(["10:30", "21:00"]);
+  });
+
+  it("deletes by id", async () => {
+    const id = await saveSnack(snack);
+    await deleteSnack(id);
+    expect(await getSnack(id)).toBeUndefined();
   });
 });
 

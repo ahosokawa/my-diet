@@ -21,6 +21,7 @@ export function installBackupHooks(): void {
     db.foods,
     db.schedule,
     db.mealLogs,
+    db.snacks,
     db.weights,
     db.combos,
     db.prefs,

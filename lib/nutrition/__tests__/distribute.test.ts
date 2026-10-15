@@ -87,6 +87,13 @@ describe("distributeMeals", () => {
     }
   });
 
+  it("gives a lone post-workout meal exactly the daily carbs", () => {
+    const meals = distributeMeals(daily, [{ index: 0, time: "18:00", postWorkout: true }]);
+    expect(meals).toHaveLength(1);
+    expect(meals[0].carbG).toBe(daily.carbG);
+    expect(meals[0].proteinG).toBe(daily.proteinG);
+  });
+
   it("keeps the post-workout carb boost after exact rounding", () => {
     const slots: MealSlot[] = [
       { index: 0, time: "08:00", postWorkout: false },

@@ -8,6 +8,7 @@ const STORES: (keyof EnvelopeTables)[] = [
   "foods",
   "schedule",
   "mealLogs",
+  "snacks",
   "weights",
   "combos",
   "prefs",

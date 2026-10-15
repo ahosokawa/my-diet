@@ -87,6 +87,22 @@ export type MealLog = {
   loggedAt: number;
 };
 
+// v10: food eaten outside the scheduled meals. Same item shape as a meal log
+// (no locks — snacks aren't solved). Its macros come off the day's remaining
+// target, which re-splits across the still-empty meals (lib/plan/remaining.ts).
+export type Snack = {
+  id?: number;
+  date: string;
+  time: string; // "HH:mm"
+  items: MealLogItem[];
+  kcal: number;
+  proteinG: number;
+  fatG: number;
+  carbG: number;
+  fiberG: number;
+  loggedAt: number;
+};
+
 export type WeightEntry = {
   id?: number;
   date: string;
@@ -123,6 +139,7 @@ class MyDietDb extends Dexie {
   foods!: Table<Food, number>;
   schedule!: Table<ScheduleDay, number>;
   mealLogs!: Table<MealLog, number>;
+  snacks!: Table<Snack, number>;
   weights!: Table<WeightEntry, number>;
   combos!: Table<Combo, number>;
   prefs!: Table<NotifPrefs, "me">;
@@ -207,6 +224,9 @@ class MyDietDb extends Dexie {
       await tx.table("mealLogs").toCollection().modify((m: MealLog) => {
         if (m.fiberG === undefined) m.fiberG = mealLogFiberG(m.items, foods);
       });
+    });
+    this.version(10).stores({
+      snacks: "++id, date",
     });
   }
 }

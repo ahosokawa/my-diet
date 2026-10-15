@@ -1,4 +1,4 @@
-import { db, type Combo, type Food, type MealLog, type NotifPrefs, type Profile, type ScheduleDay, type Targets, type WeightEntry } from "./schema";
+import { db, type Combo, type Food, type MealLog, type NotifPrefs, type Profile, type ScheduleDay, type Snack, type Targets, type WeightEntry } from "./schema";
 import seedFoods from "./seed-foods.json";
 import { todayStr } from "@/lib/date";
 import { defaultMealTimes } from "@/lib/schedule/week";
@@ -251,6 +251,32 @@ export async function getMealLog(date: string, index: number): Promise<MealLog |
 
 export async function deleteMealLog(date: string, index: number): Promise<void> {
   await db.mealLogs.where("[date+index]").equals([date, index]).delete();
+}
+
+// Saves a snack. Without an id it's created; returns the row id either way.
+export async function saveSnack(entry: Omit<Snack, "loggedAt">): Promise<number> {
+  const loggedAt = Date.now();
+  if (entry.id != null) {
+    await db.snacks.put({ ...entry, loggedAt });
+    return entry.id;
+  }
+  const row: Snack = { ...entry, loggedAt };
+  delete row.id;
+  return (await db.snacks.add(row)) as number;
+}
+
+export async function getSnack(id: number): Promise<Snack | undefined> {
+  return db.snacks.get(id);
+}
+
+// Ordered by time of day, then by creation.
+export async function getSnacksForDate(date: string): Promise<Snack[]> {
+  const rows = await db.snacks.where("date").equals(date).toArray();
+  return rows.sort((a, b) => a.time.localeCompare(b.time) || (a.id ?? 0) - (b.id ?? 0));
+}
+
+export async function deleteSnack(id: number): Promise<void> {
+  await db.snacks.delete(id);
 }
 
 export async function addWeight(w: Omit<WeightEntry, "id">): Promise<void> {

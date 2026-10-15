@@ -13,6 +13,7 @@ const EMPTY: EnvelopeTables = {
   foods: [],
   schedule: [],
   mealLogs: [],
+  snacks: [],
   weights: [],
   combos: [],
   prefs: [],

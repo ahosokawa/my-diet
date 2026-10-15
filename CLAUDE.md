@@ -29,7 +29,7 @@ This is a local-first PWA for macro tracking. There is no backend — all user d
 
 ### Data layer (`lib/db/`)
 
-- `schema.ts` — Dexie class `MyDietDb` with tables: `profile`, `targets`, `foods`, `schedule`, `mealLogs`, `weights`, `combos`, `prefs`, `backup`. Schema is **versioned**: to change a schema, add a new `this.version(N).stores(...).upgrade(...)` block — never edit an existing version (existing user databases will be on older versions and upgrade through the chain). When you add a version block, also bump `DB_SCHEMA_VERSION` in `lib/db/version.ts` (the single source of truth used by backup envelopes and the raw-IDB e2e helpers — schema.ts throws at startup if they disagree) and add a matching default applier in `lib/db/defaults.ts` so restored backups normalize.
+- `schema.ts` — Dexie class `MyDietDb` with tables: `profile`, `targets`, `foods`, `schedule`, `mealLogs`, `snacks`, `weights`, `combos`, `prefs`, `backup`. Schema is **versioned**: to change a schema, add a new `this.version(N).stores(...).upgrade(...)` block — never edit an existing version (existing user databases will be on older versions and upgrade through the chain). When you add a version block, also bump `DB_SCHEMA_VERSION` in `lib/db/version.ts` (the single source of truth used by backup envelopes and the raw-IDB e2e helpers — schema.ts throws at startup if they disagree) and add a matching default applier in `lib/db/defaults.ts` so restored backups normalize.
 - `repos.ts` — the only module UI should import. All reads/writes funnel through repo functions (`getProfile`, `logMeal`, `listFoods`, etc.) so the raw Dexie API stays encapsulated.
 - `seed-foods.json` is synced by `syncBuiltinFoods()` (on first launch and on `/today` mount — adds missing builtin slugs, never modifies existing rows); builtin foods have `builtin: 1` and should not be deleted.
 - `targets` is versioned by `dateEffective` (one row per date; re-saving the same date replaces it). `getTargetsForDate(date)` returns the row active on a given day; `getCurrentTargets()` is that for today. Pending future-dated targets can exist (see `hasPendingTargetChange`).
@@ -41,7 +41,7 @@ This is a local-first PWA for macro tracking. There is no backend — all user d
 - `distribute.ts` — Splits a daily `MacroTarget` across N meal slots. Protein/fat are even; carbs bias toward the post-workout slot (`postWorkoutCarbBias`, default 0.5). Rounding uses largest-remainder so per-meal grams sum exactly to the daily target.
 - `solver.ts` — Projected gradient descent on a weighted least-squares objective (protein weighted highest, then carbs, then fat). Locked foods are subtracted from the target up front; only unlocked portions are iterated. Non-negativity enforced by clipping.
 
-The meal-detail UI is the main consumer: it calls `distributeMeals` to get a per-meal target, then `solvePortions` to auto-balance the unlocked foods in the current meal.
+Per-meal targets are **live**: `lib/plan/remaining.ts` (`planRemaining`, called via `getDayPlan` in `lib/plan/day-plan.ts`) subtracts everything already eaten that day (logged meals + snacks) from the daily target, clamps each macro at 0, and re-runs `distributeMeals` over the still-empty meals. The meal being edited is planned as if empty (`openIndex`) so its target doesn't jump when its first food goes in. The meal-detail UI then calls `solvePortions` to auto-balance the unlocked foods toward that target.
 
 ### Schedule (`lib/schedule/week.ts`)
 
@@ -55,7 +55,7 @@ Weekly Friday check-in math (v1.1). Takes current/previous week weights and curr
 
 - `app/page.tsx` routes first-launch users to `/intake`, otherwise `/today`.
 - `app/today/page.tsx` — daily view; accepts `?d=YYYY-MM-DD` for history/future navigation.
-- `app/meals/page.tsx` — meal detail + food picker + solver; identified by `?d=YYYY-MM-DD&i=<mealIndex>` query params (not a dynamic `[id]` segment). Wrap `useSearchParams` usage in `<Suspense>` — required for static export.
+- `app/meals/page.tsx` — meal detail + food picker + solver; identified by `?d=YYYY-MM-DD&i=<mealIndex>` query params (not a dynamic `[id]` segment). `?d=…&snack=<id|new>` is snack mode: same picker, no target/solver/locks/combos, plus a time field; the row is created on the first food and deleted when emptied. Wrap `useSearchParams` usage in `<Suspense>` — required for static export.
 - `app/intake`, `app/schedule`, `app/weight`, `app/review`, `app/settings` — one route each. Custom foods are created inline from the meal picker; there is no standalone `/foods` route.
 
 Shared UI lives in `components/` (Header, TabBar, MacroBar, GramsStepper).
