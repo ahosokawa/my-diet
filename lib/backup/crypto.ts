@@ -10,17 +10,17 @@ export async function generateKey(): Promise<CryptoKey> {
   );
 }
 
-export async function encryptPat(
+export async function encryptSecret(
   key: CryptoKey,
-  pat: string
+  secret: string
 ): Promise<{ iv: Uint8Array; ciphertext: Uint8Array }> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
-  const plain = new TextEncoder().encode(pat);
+  const plain = new TextEncoder().encode(secret);
   const buf = await crypto.subtle.encrypt({ name: ALG, iv } as AesGcmParams, key, plain as BufferSource);
   return { iv, ciphertext: new Uint8Array(buf) };
 }
 
-export async function decryptPat(
+export async function decryptSecret(
   key: CryptoKey,
   iv: Uint8Array,
   ciphertext: Uint8Array

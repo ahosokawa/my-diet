@@ -4,12 +4,48 @@ import { useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Sheet } from "@/components/ui/Sheet";
 import { Toggle } from "@/components/ui/Toggle";
-import { Cloud, ExternalLink, Eye, EyeOff } from "@/components/ui/Icon";
-import { clearPat, patchBackupState, readBackupRow, setPat } from "@/lib/backup/state";
-import { flushBackupNow, readAllTables } from "@/lib/backup/scheduler";
-import { restoreFromEnvelopeJson, restoreFromGist } from "@/lib/backup/restore";
+import { Check, Cloud, Copy, ExternalLink } from "@/components/ui/Icon";
+import { clearBridge, patchBackupState, readBackupRow, setBridge } from "@/lib/backup/state";
+import { buildSyncFiles, flushBackupNow, readAllTables } from "@/lib/backup/scheduler";
+import { restoreFromEnvelopeJson, restoreFromDrive } from "@/lib/backup/restore";
 import { buildEnvelope } from "@/lib/backup/envelope";
+import { ANALYSIS_FILENAME, FOOD_LOG_FILENAME } from "@/lib/backup/analysis";
+import { DRIVE_FOLDER, bridgeScript, generateSecret, isBridgeUrl } from "@/lib/backup/bridge-script";
+import { formatError, isBackupError, pushFiles } from "@/lib/backup/drive";
 import { todayStr } from "@/lib/db/repos";
+import { haptic } from "@/lib/ui/haptics";
+
+// The setup secret must survive the trip to script.google.com and back (iOS
+// may evict a backgrounded PWA), so it waits in localStorage until connected.
+const PENDING_SECRET_KEY = "my-diet:pending-bridge-secret";
+
+function loadPendingSecret(): string | null {
+  try {
+    return localStorage.getItem(PENDING_SECRET_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function savePendingSecret(secret: string | null): void {
+  try {
+    if (secret) localStorage.setItem(PENDING_SECRET_KEY, secret);
+    else localStorage.removeItem(PENDING_SECRET_KEY);
+  } catch {
+    // ignore: the secret still lives in component state for this session
+  }
+}
+
+const CLAUDE_INSTRUCTIONS = `My diet tracking data syncs automatically to my Google Drive, folder "${DRIVE_FOLDER}". Read ${ANALYSIS_FILENAME} there first (profile, targets history, weekly summary, daily log). Use ${FOOD_LOG_FILENAME} for food-level questions. Always re-read the files at the start of an analysis; they update after every change.`;
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -26,28 +62,78 @@ function relativeTime(ts: number): string {
 
 export function BackupSection() {
   const backup = useLiveQuery(readBackupRow, [], undefined);
-  const hasPat = !!backup?.patCiphertext;
-  const [patInput, setPatInput] = useState("");
-  const [patVisible, setPatVisible] = useState(false);
+  const connected = !!backup?.bridgeUrl && !!backup?.secretCiphertext;
+  const [pendingSecret, setPendingSecret] = useState<string | null>(null);
+  const [copied, setCopied] = useState<null | "script" | "claude">(null);
+  const [scriptFallback, setScriptFallback] = useState<string | null>(null);
+  const [urlInput, setUrlInput] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [connectErr, setConnectErr] = useState<string | null>(null);
   const [backingUp, setBackingUp] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
   const [restoreSource, setRestoreSource] = useState<
-    null | { kind: "gist" } | { kind: "file"; json: string; name: string }
+    null | { kind: "drive" } | { kind: "file"; json: string; name: string }
   >(null);
   const [restoreInput, setRestoreInput] = useState("");
   const [restoring, setRestoring] = useState(false);
   const [restoreErr, setRestoreErr] = useState<string | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
 
-  async function onSavePat() {
-    const val = patInput.trim();
-    if (!val) return;
-    await setPat(val);
-    setPatInput("");
+  async function onCopyScript() {
+    const secret = pendingSecret ?? loadPendingSecret() ?? generateSecret();
+    setPendingSecret(secret);
+    savePendingSecret(secret);
+    const script = bridgeScript(secret);
+    if (await copyText(script)) {
+      setScriptFallback(null);
+      setCopied("script");
+      haptic("success");
+    } else {
+      setScriptFallback(script);
+    }
   }
 
-  async function onClearPat() {
-    await clearPat();
+  async function onCopyClaude() {
+    if (await copyText(CLAUDE_INSTRUCTIONS)) {
+      setCopied("claude");
+      haptic("success");
+    }
+  }
+
+  async function onConnect() {
+    const url = urlInput.trim();
+    const secret = pendingSecret ?? loadPendingSecret();
+    if (!secret) {
+      setConnectErr("Copy the setup script first (step 1), deploy it, then paste the URL.");
+      return;
+    }
+    if (!isBridgeUrl(url)) {
+      setConnectErr("That doesn't look like a web app URL — it should end in /exec.");
+      return;
+    }
+    setConnecting(true);
+    setConnectErr(null);
+    try {
+      // First write doubles as the connection test.
+      const startedAt = Date.now();
+      await pushFiles(url, secret, await buildSyncFiles());
+      await setBridge(url, secret);
+      await patchBackupState({ lastBackupAt: startedAt });
+      savePendingSecret(null);
+      setPendingSecret(null);
+      setUrlInput("");
+      setCopied(null);
+      haptic("success");
+    } catch (err) {
+      setConnectErr(isBackupError(err) ? formatError(err) : (err as Error)?.message ?? "Connection failed");
+      haptic("error");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function onDisconnect() {
+    await clearBridge();
   }
 
   async function onBackupNow() {
@@ -68,8 +154,8 @@ export function BackupSection() {
     setRestoring(true);
     setRestoreErr(null);
     const result =
-      restoreSource.kind === "gist"
-        ? await restoreFromGist()
+      restoreSource.kind === "drive"
+        ? await restoreFromDrive()
         : await restoreFromEnvelopeJson(restoreSource.json);
     if (!result.ok) {
       setRestoreErr(result.reason);
@@ -116,7 +202,7 @@ export function BackupSection() {
           <div className="flex-1">
             <h2 className="font-semibold">Data & backup</h2>
             <p className="text-xs text-fg-3">
-              {hasPat ? lastBackupLabel : "Not configured"}
+              {connected ? lastBackupLabel : "Not configured"}
               {backup?.lastError ? ` · ${backup.lastError}` : ""}
             </p>
           </div>
@@ -124,95 +210,127 @@ export function BackupSection() {
       </div>
 
       <h3 className="mx-2 mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-fg-3">
-        GitHub Gist
+        Google Drive
       </h3>
-      <div className="card !p-0 mb-3 overflow-hidden">
-        {hasPat ? (
+      {connected ? (
+        <div className="card !p-0 mb-3 overflow-hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0 flex-1">
-              <div className="text-sm">Token</div>
-              <div className="truncate text-xs text-fg-3">
-                ghp_••••{backup?.patTailHint ?? ""}
-              </div>
+              <div className="text-sm">Connected</div>
+              <div className="truncate text-xs text-fg-3">Syncing to the “{DRIVE_FOLDER}” folder</div>
             </div>
-            <button className="btn-secondary" onClick={onClearPat}>
-              Replace
+            <button className="btn-secondary" onClick={onDisconnect}>
+              Disconnect
             </button>
           </div>
-        ) : (
-          <div className="px-4 py-3">
-            <label className="text-sm">Personal access token</label>
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                type={patVisible ? "text" : "password"}
-                className="min-w-0 flex-1 rounded-lg bg-surface-3 px-3 py-2 text-sm outline-none"
-                placeholder="ghp_…"
-                value={patInput}
-                onChange={(e) => setPatInput(e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <button
-                type="button"
-                aria-label={patVisible ? "Hide token" : "Show token"}
-                className="rounded-lg bg-surface-3 p-2 text-fg-2"
-                onClick={() => setPatVisible((v) => !v)}
-              >
-                {patVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={onSavePat}
-                disabled={!patInput.trim()}
-              >
-                Save
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-fg-3">
-              Classic PAT with <code>gist</code> scope from{" "}
-              <a
-                className="underline"
-                href="https://github.com/settings/tokens"
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                github.com/settings/tokens
-              </a>
-              . Encrypted on this device.
-            </p>
+          <div className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-3">
+            <span className="text-sm">Auto-sync</span>
+            <Toggle
+              label="Auto-sync"
+              checked={backup?.autoEnabled !== 0}
+              onChange={onToggleAuto}
+            />
           </div>
-        )}
-        <div className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-3">
-          <span className="text-sm">Auto-backup</span>
-          <Toggle
-            label="Auto-backup"
-            checked={backup?.autoEnabled !== 0}
-            onChange={onToggleAuto}
-            disabled={!hasPat}
-          />
-        </div>
-        <div className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-3">
-          <span className="text-sm">{lastBackupLabel}</span>
+          <div className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-3">
+            <span className="text-sm">{lastBackupLabel}</span>
+            <button className="btn-secondary" onClick={onBackupNow} disabled={backingUp}>
+              {backingUp ? "Syncing…" : "Sync now"}
+            </button>
+          </div>
           <button
-            className="btn-secondary"
-            onClick={onBackupNow}
-            disabled={!hasPat || backingUp}
+            className="flex w-full items-center justify-between gap-3 border-t border-hairline px-4 py-3 text-left text-sm text-brand-600 dark:text-brand-300"
+            onClick={onCopyClaude}
           >
-            {backingUp ? "Backing up…" : "Back up now"}
+            <span>Copy instructions for Claude</span>
+            {copied === "claude" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           </button>
-        </div>
-        {backup?.gistId && (
           <a
             className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-3 text-sm text-brand-600 dark:text-brand-300"
-            href={`https://gist.github.com/${backup.gistId}`}
+            href={`https://drive.google.com/drive/search?q=${encodeURIComponent(DRIVE_FOLDER)}`}
             target="_blank"
             rel="noreferrer noopener"
           >
-            <span>Open gist on GitHub</span>
+            <span>Open in Google Drive</span>
             <ExternalLink className="h-4 w-4" />
           </a>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="card !p-0 mb-3 overflow-hidden">
+          <div className="px-4 py-3">
+            <p className="text-xs text-fg-3">
+              Syncs your data to a “{DRIVE_FOLDER}” folder in your Drive that Claude can read. A small
+              Google Apps Script you deploy does the writing, so there&apos;s nothing to re-authorize later.
+            </p>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-3">
+            <span className="text-sm">1. Copy the setup script</span>
+            <button className="btn-secondary flex items-center gap-1.5" onClick={onCopyScript}>
+              {copied === "script" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copied === "script" ? "Copied" : "Copy"}
+            </button>
+          </div>
+          {scriptFallback && (
+            <div className="border-t border-hairline px-4 py-3">
+              <p className="mb-2 text-xs text-fg-3">Couldn&apos;t copy automatically. Select all and copy:</p>
+              <textarea
+                readOnly
+                className="h-32 w-full rounded-lg bg-surface-3 p-2 font-mono text-xs outline-none"
+                value={scriptFallback}
+                onFocus={(e) => e.currentTarget.select()}
+              />
+            </div>
+          )}
+          <div className="border-t border-hairline px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm">2. Deploy it</span>
+              <a
+                className="btn-secondary flex items-center gap-1.5"
+                href="https://script.google.com/home/projects/create"
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                Apps Script
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            </div>
+            <p className="mt-2 text-xs text-fg-3">
+              Replace the editor contents with the script, then Deploy → New deployment → Web app. Set
+              Execute as <strong>Me</strong> and Who has access <strong>Anyone</strong>, authorize, and
+              copy the web app URL.
+            </p>
+          </div>
+          <div className="border-t border-hairline px-4 py-3">
+            <label className="text-sm" htmlFor="bridge-url">
+              3. Paste the web app URL
+            </label>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                id="bridge-url"
+                type="url"
+                inputMode="url"
+                className="min-w-0 flex-1 rounded-lg bg-surface-3 px-3 py-2 text-sm outline-none"
+                placeholder="https://script.google.com/macros/s/…/exec"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                disabled={connecting}
+              />
+              <button
+                className="btn-secondary"
+                onClick={onConnect}
+                disabled={!urlInput.trim() || connecting}
+              >
+                {connecting ? "Connecting…" : "Connect"}
+              </button>
+            </div>
+            {connectErr && (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-400">{connectErr}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       <h3 className="mx-2 mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-fg-3">
         Local file
@@ -262,17 +380,17 @@ export function BackupSection() {
         onClick={() => {
           setRestoreInput("");
           setRestoreErr(null);
-          setRestoreSource({ kind: "gist" });
+          setRestoreSource({ kind: "drive" });
         }}
-        disabled={!hasPat || !backup?.gistId}
+        disabled={!connected}
       >
-        Restore from Gist…
+        Restore from Google Drive…
       </button>
 
       <Sheet
         open={restoreSource !== null}
         onClose={() => (restoring ? null : setRestoreSource(null))}
-        title={restoreSource?.kind === "file" ? "Import backup file" : "Restore from Gist"}
+        title={restoreSource?.kind === "file" ? "Import backup file" : "Restore from Google Drive"}
         detent="medium"
         footer={
           <div className="flex gap-2 pb-2">
@@ -298,7 +416,7 @@ export function BackupSection() {
           {restoreSource?.kind === "file" ? (
             <>the file <strong className="break-all">{restoreSource.name}</strong></>
           ) : (
-            "your gist"
+            "your Google Drive backup"
           )}
           . This cannot be undone.
         </p>

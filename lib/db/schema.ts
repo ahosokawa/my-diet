@@ -121,11 +121,13 @@ export type NotifPrefs = {
 
 export type BackupState = {
   id: "me";
-  patKey?: CryptoKey;
-  patCiphertext?: Uint8Array;
-  patIv?: Uint8Array;
-  patTailHint?: string;
-  gistId?: string;
+  // Drive bridge (lib/backup/bridge-script.ts): the Apps Script /exec URL and
+  // its shared secret, encrypted with a non-extractable device key. Not
+  // indexed, so these replaced the old gist/PAT fields without a version bump.
+  bridgeUrl?: string;
+  secretKey?: CryptoKey;
+  secretCiphertext?: Uint8Array;
+  secretIv?: Uint8Array;
   autoEnabled: 0 | 1;
   lastBackupAt?: number;
   lastChangeAt?: number;

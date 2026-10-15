@@ -1,26 +1,25 @@
 import { db } from "@/lib/db/schema";
 import { normalizeTables } from "@/lib/db/defaults";
 import {
+  BACKUP_FILENAME,
   checkVersion,
   parseEnvelope,
   type EnvelopeTables,
 } from "./envelope";
-import { fetchGist, formatError, isBackupError } from "./gist";
-import { getBackupState, getPat } from "./state";
+import { formatError, isBackupError, readFile } from "./drive";
+import { getBridge } from "./state";
 
 export type RestoreResult =
   | { ok: true; backupVersion: number; exportedAt: number }
   | { ok: false; reason: string };
 
-export async function restoreFromGist(): Promise<RestoreResult> {
-  const state = await getBackupState();
-  if (!state.gistId) return { ok: false, reason: "No gist configured" };
-  const pat = await getPat();
-  if (!pat) return { ok: false, reason: "PAT not set" };
+export async function restoreFromDrive(): Promise<RestoreResult> {
+  const bridge = await getBridge();
+  if (!bridge) return { ok: false, reason: "Google Drive sync is not set up" };
 
   let json: string;
   try {
-    json = await fetchGist(pat, state.gistId);
+    json = await readFile(bridge.url, bridge.secret, BACKUP_FILENAME);
   } catch (err) {
     return {
       ok: false,

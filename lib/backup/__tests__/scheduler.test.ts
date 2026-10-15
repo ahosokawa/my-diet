@@ -2,18 +2,17 @@ import { describe, expect, it } from "vitest";
 import { decideNextAction } from "../scheduler";
 
 const base = {
-  patPresent: true,
+  configured: true,
   autoEnabled: true,
   manual: false,
-  hasGistId: false,
   lastBackupAt: 0,
   lastChangeAt: 100,
 };
 
 describe("decideNextAction", () => {
-  it("skips when no PAT", () => {
-    const r = decideNextAction({ ...base, patPresent: false });
-    expect(r).toEqual({ action: "skip", reason: "no-pat" });
+  it("skips when the Drive bridge is not configured", () => {
+    const r = decideNextAction({ ...base, configured: false });
+    expect(r).toEqual({ action: "skip", reason: "not-configured" });
   });
 
   it("skips non-manual call when auto is disabled", () => {
@@ -23,7 +22,7 @@ describe("decideNextAction", () => {
 
   it("allows manual call even when auto is disabled", () => {
     const r = decideNextAction({ ...base, autoEnabled: false, manual: true });
-    expect(r.action).toBe("create");
+    expect(r).toEqual({ action: "sync" });
   });
 
   it("skips non-manual call when not dirty", () => {
@@ -33,27 +32,15 @@ describe("decideNextAction", () => {
 
   it("allows manual call even when not dirty", () => {
     const r = decideNextAction({ ...base, manual: true, lastBackupAt: 200, lastChangeAt: 100 });
-    expect(r.action).toBe("create");
+    expect(r).toEqual({ action: "sync" });
   });
 
-  it("returns create when dirty and no gist id", () => {
-    const r = decideNextAction(base);
-    expect(r).toEqual({ action: "create" });
+  it("syncs when dirty", () => {
+    expect(decideNextAction(base)).toEqual({ action: "sync" });
   });
 
-  it("returns update when dirty and has gist id", () => {
-    const r = decideNextAction({ ...base, hasGistId: true });
-    expect(r).toEqual({ action: "update" });
-  });
-
-  it("treats missing timestamps as never-backed-up and changed", () => {
-    const r = decideNextAction({
-      patPresent: true,
-      autoEnabled: true,
-      manual: false,
-      hasGistId: false,
-    });
-    expect(r.action).toBe("skip");
-    if (r.action === "skip") expect(r.reason).toBe("not-dirty");
+  it("treats missing timestamps as nothing to sync", () => {
+    const r = decideNextAction({ configured: true, autoEnabled: true, manual: false });
+    expect(r).toEqual({ action: "skip", reason: "not-dirty" });
   });
 });

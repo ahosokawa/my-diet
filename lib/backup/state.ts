@@ -1,10 +1,12 @@
 import { db, type BackupState } from "@/lib/db/schema";
-import { decryptPat, encryptPat, generateKey } from "./crypto";
+import { decryptSecret, encryptSecret, generateKey } from "./crypto";
 
 const DEFAULT: BackupState = {
   id: "me",
   autoEnabled: 1,
 };
+
+export type Bridge = { url: string; secret: string };
 
 export async function getBackupState(): Promise<BackupState> {
   const row = await db.backup.get("me");
@@ -20,43 +22,44 @@ export async function patchBackupState(patch: Partial<BackupState>): Promise<voi
   await db.backup.put({ ...current, ...patch, id: "me" });
 }
 
-export async function setPat(pat: string): Promise<void> {
-  const current = await getBackupState();
-  const key = current.patKey ?? (await generateKey());
-  const { iv, ciphertext } = await encryptPat(key, pat);
-  await db.backup.put({
-    ...current,
+// Rows written by the gist-era app also carry patKey/patCiphertext/patIv/
+// patTailHint/gistId. Rebuilding the row from known fields drops them.
+function knownFields(s: BackupState): BackupState {
+  return {
     id: "me",
-    patKey: key,
-    patCiphertext: ciphertext,
-    patIv: iv,
-    patTailHint: pat.slice(-4),
+    autoEnabled: s.autoEnabled ?? 1,
+    lastChangeAt: s.lastChangeAt,
+    persistGranted: s.persistGranted,
+  };
+}
+
+export async function setBridge(url: string, secret: string): Promise<void> {
+  const current = await getBackupState();
+  const key = current.secretKey ?? (await generateKey());
+  const { iv, ciphertext } = await encryptSecret(key, secret);
+  await db.backup.put({
+    ...knownFields(current),
+    bridgeUrl: url,
+    secretKey: key,
+    secretCiphertext: ciphertext,
+    secretIv: iv,
+    lastError: null,
   });
 }
 
-export async function getPat(): Promise<string | null> {
+export async function getBridge(): Promise<Bridge | null> {
   const s = await getBackupState();
-  if (!s.patKey || !s.patCiphertext || !s.patIv) return null;
+  if (!s.bridgeUrl || !s.secretKey || !s.secretCiphertext || !s.secretIv) return null;
   try {
-    return await decryptPat(s.patKey, s.patIv, s.patCiphertext);
+    return { url: s.bridgeUrl, secret: await decryptSecret(s.secretKey, s.secretIv, s.secretCiphertext) };
   } catch {
     return null;
   }
 }
 
-export async function clearPat(): Promise<void> {
+export async function clearBridge(): Promise<void> {
   const current = await getBackupState();
-  await db.backup.put({
-    ...current,
-    id: "me",
-    patKey: undefined,
-    patCiphertext: undefined,
-    patIv: undefined,
-    patTailHint: undefined,
-    gistId: undefined,
-    lastBackupAt: undefined,
-    lastError: null,
-  });
+  await db.backup.put({ ...knownFields(current), lastError: null });
 }
 
 export async function markChanged(): Promise<void> {
