@@ -8,6 +8,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { DecimalInput } from "@/components/ui/DecimalInput";
 import { Bell, ChevronDown, ChevronUp, Dumbbell, User } from "@/components/ui/Icon";
 import { BackupSection } from "./BackupSection";
+import { MyFoodsSection } from "./MyFoodsSection";
 import { haptic } from "@/lib/ui/haptics";
 import {
   DEFAULT_NOTIF_PREFS,
@@ -726,6 +727,8 @@ export default function SettingsPage() {
               {status}
             </p>
           )}
+
+          <MyFoodsSection />
 
           <BackupSection />
 

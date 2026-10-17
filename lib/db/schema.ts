@@ -52,6 +52,15 @@ export type Food = {
   builtin: 0 | 1;
   favorite: 0 | 1;
   category?: string;
+  // Custom-food editing (none indexed, so no store change). The label serving
+  // the food was entered with, so the editor can show it again; absent on
+  // foods created before it was stored.
+  servingSize?: number;
+  // Archived foods are hidden from the picker but kept so logged meals and
+  // combos that reference them still resolve. Deleting a custom food archives
+  // it; editing its nutrition archives it with `replacedBy` set to the new row.
+  archived?: 0 | 1;
+  replacedBy?: number;
 };
 
 export type ComboItem = { foodId: number; grams: number; locked: 0 | 1 };

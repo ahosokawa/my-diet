@@ -25,6 +25,7 @@ export {
   Minus,
   Sparkles,
   Copy,
+  Pencil,
   Cloud,
   ExternalLink,
   Eye,

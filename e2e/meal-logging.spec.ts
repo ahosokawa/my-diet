@@ -105,7 +105,7 @@ test.describe("Meal logging", () => {
     const picker2 = page.getByRole("dialog", { name: "Add food" });
     await picker2.getByPlaceholder("Search foods…").fill("homemade");
     await expect(
-      picker2.getByRole("button", { name: /homemade shake/i })
+      picker2.getByRole("button", { name: /^homemade shake/i })
     ).toBeVisible();
   });
 
@@ -142,6 +142,63 @@ test.describe("Meal logging", () => {
     expect(saved).toBeDefined();
     expect(saved!.fatPer100).toBe(4.5);
     expect(saved!.carbPer100).toBe(7.5);
+  });
+
+  test("editing a logged custom food versions it; deleting archives it", async ({ page }) => {
+    // Log a custom food on Meal 2.
+    await page.getByRole("link", { name: /Meal 2/ }).click();
+    await page.getByRole("button", { name: /Add food/ }).click();
+    const picker = page.getByRole("dialog", { name: "Add food" });
+    await picker.getByPlaceholder("Search foods…").fill("test bar");
+    await picker.getByRole("button", { name: /Add "test bar" as custom food/ }).click();
+    const addDialog = page.getByRole("dialog", { name: "Add custom food" });
+    await addDialog.getByLabel("Serving size").fill("50");
+    await addDialog.getByLabel("Calories per serving").fill("200");
+    await addDialog.getByLabel("Protein per serving").fill("20");
+    await addDialog.getByLabel("Fat per serving").fill("7");
+    await addDialog.getByLabel("Carbs per serving").fill("22");
+    await addDialog.getByRole("button", { name: "Save" }).click();
+    await expect(addDialog).not.toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(picker).not.toBeVisible();
+    await waitSaved(page);
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(page).toHaveURL(/\/today/);
+
+    // Edit it from another meal's picker: the form shows the label serving.
+    await page.getByRole("link", { name: /Meal 3/ }).click();
+    await page.getByRole("button", { name: /Add food/ }).click();
+    await expect(picker).toBeVisible();
+    await picker.getByPlaceholder("Search foods…").fill("test bar");
+    await picker.getByRole("button", { name: "Edit test bar" }).click();
+    const editDialog = page.getByRole("dialog", { name: "Edit food" });
+    await expect(editDialog.getByLabel("Serving size")).toHaveValue("50");
+    await expect(editDialog.getByLabel("Protein per serving")).toHaveValue("20");
+    await editDialog.getByLabel("Protein per serving").fill("25");
+    await editDialog.getByRole("button", { name: "Save" }).click();
+    await expect(editDialog).not.toBeVisible();
+
+    type Row = { id: number; name: string; proteinPer100: number; archived?: number; replacedBy?: number };
+    let foods = ((await readTable(page, "foods")) as Row[]).filter((f) => f.name === "test bar");
+    expect(foods).toHaveLength(2);
+    const old = foods.find((f) => f.archived === 1)!;
+    const current = foods.find((f) => !f.archived)!;
+    expect(old.proteinPer100).toBe(40);
+    expect(current.proteinPer100).toBe(50);
+    expect(old.replacedBy).toBe(current.id);
+
+    // The already-logged meal still points at the version it was logged with.
+    const logs = (await readTable(page, "mealLogs")) as { index: number; items: { foodId: number }[] }[];
+    expect(logs.find((l) => l.index === 1)!.items[0].foodId).toBe(old.id);
+
+    // Delete: two-step confirm, then it's gone from the picker but kept in the DB.
+    await picker.getByRole("button", { name: "Edit test bar" }).click();
+    await editDialog.getByRole("button", { name: "Delete food" }).click();
+    await editDialog.getByRole("button", { name: "Confirm delete" }).click();
+    await expect(editDialog).not.toBeVisible();
+    await expect(picker.getByRole("button", { name: /^test bar/ })).toHaveCount(0);
+    foods = ((await readTable(page, "foods")) as Row[]).filter((f) => f.name === "test bar");
+    expect(foods.every((f) => f.archived === 1)).toBe(true);
   });
 
   test("auto-balance lands unlocked portions within ~5g of target", async ({ page }) => {

@@ -7,13 +7,11 @@ import { MacroRow } from "@/components/MacroBar";
 import { GramsStepper } from "@/components/GramsStepper";
 import { Sheet } from "@/components/ui/Sheet";
 import { IconButton } from "@/components/ui/IconButton";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import { DECIMAL_RE } from "@/components/ui/DecimalInput";
-import { Lock, LockOpen, X, Plus, Sparkles, Star, Search, Trash2, Copy, Check } from "@/components/ui/Icon";
+import { FoodEditorSheet } from "@/components/FoodEditorSheet";
+import { Lock, LockOpen, X, Plus, Sparkles, Star, Search, Trash2, Copy, Check, Pencil } from "@/components/ui/Icon";
 import { haptic } from "@/lib/ui/haptics";
 import { createSaveQueue, type SaveQueue, type SyncState } from "@/lib/ui/save-queue";
 import {
-  addCustomFood,
   deleteMealLog,
   deleteSnack,
   getSnack,
@@ -55,36 +53,6 @@ type MealSnapshot =
     }
   | { kind: "snackDelete"; id: number | null; draft: string };
 
-type CustomDraft = {
-  name: string;
-  // Numeric fields hold the raw input string so partial entries like "4."
-  // survive re-render; they're parsed on save.
-  servingSize: string;
-  kcalPerServing: string;
-  proteinPerServing: string;
-  fatPerServing: string;
-  carbPerServing: string;
-  fiberPerServing: string; // optional; blank means unknown, counted as 0
-  unit: "g" | "ml";
-  category: string;
-};
-
-const EMPTY_CUSTOM: CustomDraft = {
-  name: "",
-  servingSize: "",
-  kcalPerServing: "",
-  proteinPerServing: "",
-  fatPerServing: "",
-  carbPerServing: "",
-  fiberPerServing: "",
-  unit: "g",
-  category: "other",
-};
-
-function round1(n: number): number {
-  return Math.round(n * 10) / 10;
-}
-
 function MealDetail() {
   const router = useRouter();
   const params = useSearchParams();
@@ -108,8 +76,7 @@ function MealDetail() {
   const [showSaveCombo, setShowSaveCombo] = useState(false);
   const [comboName, setComboName] = useState("");
   const [showCustomForm, setShowCustomForm] = useState(false);
-  const [customDraft, setCustomDraft] = useState<CustomDraft>(EMPTY_CUSTOM);
-  const [savingCustom, setSavingCustom] = useState(false);
+  const [editingFood, setEditingFood] = useState<Food | null>(null);
   const [loading, setLoading] = useState(true);
   const [snackTime, setSnackTime] = useState("12:00");
   const [snackMissing, setSnackMissing] = useState(false);
@@ -169,6 +136,8 @@ function MealDetail() {
           listFoods(),
           snackId != null ? getSnack(snackId) : Promise.resolve(undefined),
         ]);
+        // Logged items may point at archived foods, which listFoods() hides.
+        const logged = await getFoodsByIds((snack?.items ?? []).map((it) => it.foodId));
         if (cancelled) return;
         setAllFoods(foods);
         setTarget(null);
@@ -184,7 +153,7 @@ function MealDetail() {
               : "12:00"
           );
         }
-        const byId = new Map(foods.map((f) => [f.id!, f]));
+        const byId = new Map(logged.map((f) => [f.id!, f]));
         setSelected(
           (snack?.items ?? [])
             .map((it) => {
@@ -215,7 +184,9 @@ function MealDetail() {
 
       const log = plan.logs.find((l) => l.index === mealIndex);
       if (log && log.items.length > 0) {
-        const byId = new Map(foods.map((f) => [f.id!, f]));
+        const logged = await getFoodsByIds(log.items.map((it) => it.foodId));
+        if (cancelled) return;
+        const byId = new Map(logged.map((f) => [f.id!, f]));
         const sel: Selection[] = log.items
           .map((it) => {
             const f = byId.get(it.foodId);
@@ -338,55 +309,40 @@ function MealDetail() {
   }
 
   function openCustomForm() {
-    setCustomDraft({ ...EMPTY_CUSTOM, name: search.trim() });
+    setEditingFood(null);
     setShowCustomForm(true);
   }
 
-  async function saveCustomFood() {
-    const size = Number(customDraft.servingSize);
-    const kcal = Number(customDraft.kcalPerServing);
-    const protein = Number(customDraft.proteinPerServing);
-    const fat = Number(customDraft.fatPerServing);
-    const carb = Number(customDraft.carbPerServing);
-    const hasFiber = customDraft.fiberPerServing.trim() !== "";
-    const fiber = Number(customDraft.fiberPerServing);
-    if (
-      !customDraft.name.trim() ||
-      !customDraft.servingSize.trim() ||
-      !Number.isFinite(size) ||
-      size <= 0 ||
-      [customDraft.kcalPerServing, customDraft.proteinPerServing, customDraft.fatPerServing, customDraft.carbPerServing].some((v) => !v.trim()) ||
-      [kcal, protein, fat, carb].some((n) => !Number.isFinite(n) || n < 0) ||
-      (hasFiber && (!Number.isFinite(fiber) || fiber < 0))
-    )
-      return;
-    setSavingCustom(true);
-    const factor = 100 / size;
-    const id = await addCustomFood({
-      name: customDraft.name.trim(),
-      kcalPer100: round1(kcal * factor),
-      proteinPer100: round1(protein * factor),
-      fatPer100: round1(fat * factor),
-      carbPer100: round1(carb * factor),
-      ...(hasFiber ? { fiberPer100: round1(fiber * factor) } : {}),
-      unit: customDraft.unit,
-      category: customDraft.category,
-    });
-    const foods = await listFoods();
-    setAllFoods(foods);
-    const newFood = foods.find((f) => f.id === id);
-    if (newFood) {
+  function openEditFood(food: Food) {
+    setEditingFood(food);
+    setShowCustomForm(true);
+  }
+
+  async function onFoodSaved(food: Food, previousId: number | null) {
+    await reload();
+    if (!editingFood) {
       setSelected((prev) =>
-        prev.some((s) => s.food.id === id)
+        prev.some((s) => s.food.id === food.id)
           ? prev
-          : [...prev, { food: newFood, grams: 100, locked: false }]
+          : [...prev, { food, grams: 100, locked: false }]
+      );
+      setSearch("");
+    } else {
+      // Fixing a food mid-meal should fix this meal too; other logged meals
+      // keep the version they were logged with.
+      const oldId = previousId ?? food.id;
+      setSelected((prev) =>
+        prev.some((s) => s.food.id === oldId)
+          ? balance(prev.map((s) => (s.food.id === oldId ? { ...s, food } : s)))
+          : prev
       );
     }
     setShowCustomForm(false);
-    setCustomDraft(EMPTY_CUSTOM);
-    setSearch("");
-    setSavingCustom(false);
-    haptic("success");
+  }
+
+  async function onFoodArchived() {
+    await reload();
+    setShowCustomForm(false);
   }
 
   function autoBalance() {
@@ -804,6 +760,15 @@ function MealDetail() {
                     {f.fiberPer100 ? ` · ${f.fiberPer100}Fb` : ""} / 100{f.unit}
                   </div>
                 </button>
+                {!f.builtin && (
+                  <IconButton
+                    label={`Edit ${f.name}`}
+                    variant="ghost"
+                    onClick={() => openEditFood(f)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </IconButton>
+                )}
                 <span
                   className={`mr-2 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors ${
                     picked
@@ -824,172 +789,14 @@ function MealDetail() {
         </div>
       </Sheet>
 
-      <Sheet
+      <FoodEditorSheet
         open={showCustomForm}
-        onClose={() => {
-          if (!savingCustom) {
-            setShowCustomForm(false);
-            setCustomDraft(EMPTY_CUSTOM);
-          }
-        }}
-        title="Add custom food"
-        detent="large"
-        footer={
-          <div className="flex gap-2">
-            <button
-              className="btn-secondary flex-1"
-              onClick={() => {
-                setShowCustomForm(false);
-                setCustomDraft(EMPTY_CUSTOM);
-              }}
-              disabled={savingCustom}
-            >
-              Cancel
-            </button>
-            <button
-              className="btn-primary flex-1"
-              disabled={savingCustom}
-              onClick={saveCustomFood}
-            >
-              {savingCustom ? "Saving…" : "Save"}
-            </button>
-          </div>
-        }
-      >
-        <div className="space-y-3">
-          <div>
-            <label className="label">Name</label>
-            <input
-              className="input"
-              autoFocus
-              aria-label="Food name"
-              value={customDraft.name}
-              onChange={(e) =>
-                setCustomDraft({ ...customDraft, name: e.target.value })
-              }
-            />
-          </div>
-          <div>
-            <label className="label">Unit</label>
-            <SegmentedControl
-              value={customDraft.unit}
-              onChange={(v) => setCustomDraft({ ...customDraft, unit: v })}
-              options={[
-                { value: "g", label: "Grams (g)" },
-                { value: "ml", label: "Milliliters (ml)" },
-              ]}
-              ariaLabel="Unit"
-            />
-          </div>
-          <div>
-            <label className="label">Serving size</label>
-            <div className="relative">
-              <input
-                inputMode="decimal"
-                aria-label="Serving size"
-                className="input pr-10"
-                placeholder="e.g. 28"
-                value={customDraft.servingSize}
-                onChange={(e) => {
-                  if (DECIMAL_RE.test(e.target.value))
-                    setCustomDraft({ ...customDraft, servingSize: e.target.value });
-                }}
-              />
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-fg-3">
-                {customDraft.unit}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-fg-3">
-              Copy this from the nutrition label (e.g. "1 scoop (28g)" → enter 28).
-            </p>
-          </div>
-          <div>
-            <label className="label">Per serving</label>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-xs text-fg-3">Calories</label>
-                <input
-                  inputMode="decimal"
-                  aria-label="Calories per serving"
-                  className="input"
-                  value={customDraft.kcalPerServing}
-                  onChange={(e) => {
-                    if (DECIMAL_RE.test(e.target.value))
-                      setCustomDraft({ ...customDraft, kcalPerServing: e.target.value });
-                  }}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-fg-3">Protein (g)</label>
-                <input
-                  inputMode="decimal"
-                  aria-label="Protein per serving"
-                  className="input"
-                  value={customDraft.proteinPerServing}
-                  onChange={(e) => {
-                    if (DECIMAL_RE.test(e.target.value))
-                      setCustomDraft({ ...customDraft, proteinPerServing: e.target.value });
-                  }}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-fg-3">Fat (g)</label>
-                <input
-                  inputMode="decimal"
-                  aria-label="Fat per serving"
-                  className="input"
-                  value={customDraft.fatPerServing}
-                  onChange={(e) => {
-                    if (DECIMAL_RE.test(e.target.value))
-                      setCustomDraft({ ...customDraft, fatPerServing: e.target.value });
-                  }}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-fg-3">Carbs (g)</label>
-                <input
-                  inputMode="decimal"
-                  aria-label="Carbs per serving"
-                  className="input"
-                  value={customDraft.carbPerServing}
-                  onChange={(e) => {
-                    if (DECIMAL_RE.test(e.target.value))
-                      setCustomDraft({ ...customDraft, carbPerServing: e.target.value });
-                  }}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-fg-3">Fiber (g)</label>
-                <input
-                  inputMode="decimal"
-                  aria-label="Fiber per serving"
-                  className="input"
-                  placeholder="Optional"
-                  value={customDraft.fiberPerServing}
-                  onChange={(e) => {
-                    if (DECIMAL_RE.test(e.target.value))
-                      setCustomDraft({ ...customDraft, fiberPerServing: e.target.value });
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-          <div>
-            <label className="label">Category</label>
-            <input
-              className="input"
-              aria-label="Category"
-              value={customDraft.category}
-              onChange={(e) =>
-                setCustomDraft({ ...customDraft, category: e.target.value })
-              }
-            />
-          </div>
-          <p className="text-xs text-fg-3">
-            Saved to your library — it'll appear in future meal pickers too.
-          </p>
-        </div>
-      </Sheet>
+        onClose={() => setShowCustomForm(false)}
+        food={editingFood}
+        initialName={search}
+        onSaved={onFoodSaved}
+        onArchived={onFoodArchived}
+      />
 
       <Sheet
         open={showCombos}

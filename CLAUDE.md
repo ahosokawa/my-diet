@@ -56,7 +56,7 @@ Weekly Friday check-in math (v1.1). Takes current/previous week weights and curr
 - `app/page.tsx` routes first-launch users to `/intake`, otherwise `/today`.
 - `app/today/page.tsx` — daily view; accepts `?d=YYYY-MM-DD` for history/future navigation.
 - `app/meals/page.tsx` — meal detail + food picker + solver; identified by `?d=YYYY-MM-DD&i=<mealIndex>` query params (not a dynamic `[id]` segment). `?d=…&snack=<id|new>` is snack mode: same picker, no target/solver/locks/combos, plus a time field; the row is created on the first food and deleted when emptied. Wrap `useSearchParams` usage in `<Suspense>` — required for static export.
-- `app/intake`, `app/schedule`, `app/weight`, `app/review`, `app/settings` — one route each. Custom foods are created inline from the meal picker; there is no standalone `/foods` route.
+- `app/intake`, `app/schedule`, `app/weight`, `app/review`, `app/settings` — one route each. Custom foods are created and edited inline from the meal picker (pencil on custom rows) or from Settings → My foods, both via `components/FoodEditorSheet.tsx`; there is no standalone `/foods` route. Editing a food's nutrition forks a new row and archives the old one (`updateCustomFood`), and deleting archives it (`archiveFood`), so logged meals keep the values they were logged with. `listFoods()` hides archived rows, so resolve logged items with `getFoodsByIds`.
 
 Shared UI lives in `components/` (Header, TabBar, MacroBar, GramsStepper).
 

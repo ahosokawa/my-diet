@@ -7,6 +7,7 @@ import { hasReviewData, splitWeights } from "@/lib/review/engine";
 import { macrosFromKcal } from "@/lib/nutrition/macros";
 import { effectiveWeightLb, maintenanceKcal, recentAvgWeight } from "@/lib/nutrition/maintenance";
 import { kcalForRate } from "@/lib/nutrition/rate";
+import { nutritionChanged, type CustomFoodInput } from "@/lib/foods/draft";
 
 export { todayStr };
 
@@ -154,8 +155,9 @@ export async function getReviewState(today: string): Promise<ReviewState> {
   };
 }
 
+/** Foods offered in the picker — archived foods are left out. */
 export async function listFoods(): Promise<Food[]> {
-  const all = await db.foods.orderBy("name").toArray();
+  const all = (await db.foods.orderBy("name").toArray()).filter((f) => !f.archived);
   return all.sort((a, b) => {
     if (a.favorite !== b.favorite) return b.favorite - a.favorite;
     return a.name.localeCompare(b.name);
@@ -173,14 +175,53 @@ export async function getFoodsByIds(ids: number[]): Promise<Food[]> {
   return all.filter((f): f is Food => !!f);
 }
 
-export async function addCustomFood(f: Omit<Food, "id" | "builtin" | "slug" | "favorite"> & { slug?: string }): Promise<number> {
-  const slug = f.slug ?? `custom-${Date.now()}`;
+// `slug` is a unique index; the random suffix keeps two saves in the same
+// millisecond (or under a frozen test clock) from colliding.
+function customSlug(): string {
+  return `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export async function addCustomFood(f: CustomFoodInput & { slug?: string }): Promise<number> {
+  const slug = f.slug ?? customSlug();
   const id = await db.foods.add({ ...f, slug, builtin: 0, favorite: 0 });
   return id as number;
 }
 
-export async function deleteFood(id: number): Promise<void> {
-  await db.foods.delete(id);
+/**
+ * Edit a custom food; returns the id of the row now in use. Name/category/
+ * serving-size changes apply in place. A nutrition change forks a new row and
+ * archives the old one, so meals already logged keep what was actually eaten;
+ * combos are templates for future meals and move to the new row.
+ */
+export async function updateCustomFood(id: number, input: CustomFoodInput): Promise<number> {
+  return db.transaction("rw", db.foods, db.combos, async () => {
+    const old = await db.foods.get(id);
+    if (!old || old.builtin) throw new Error(`Not an editable food: ${id}`);
+    if (!nutritionChanged(old, input)) {
+      await db.foods.put({ ...old, ...input });
+      return id;
+    }
+    const newId = (await db.foods.add({
+      ...input,
+      slug: customSlug(),
+      builtin: 0,
+      favorite: old.favorite,
+    })) as number;
+    await db.foods.update(id, { archived: 1, replacedBy: newId });
+    await db.combos
+      .filter((c) => c.items.some((it) => it.foodId === id))
+      .modify((c) => {
+        c.items = c.items.map((it) => (it.foodId === id ? { ...it, foodId: newId } : it));
+      });
+    return newId;
+  });
+}
+
+/** "Delete" for custom foods: hide it, but keep the row for history. */
+export async function archiveFood(id: number): Promise<void> {
+  const f = await db.foods.get(id);
+  if (!f || f.builtin) throw new Error(`Not an editable food: ${id}`);
+  await db.foods.update(id, { archived: 1 });
 }
 
 /**

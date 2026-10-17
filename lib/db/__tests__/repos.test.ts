@@ -2,7 +2,9 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../schema";
 import {
+  addCustomFood,
   addWeight,
+  archiveFood,
   deleteMealLog,
   deleteSnack,
   getSnack,
@@ -11,13 +13,17 @@ import {
   getProfile,
   getReviewState,
   getTargetsForDate,
+  getFoodsByIds,
+  listCombos,
   listFoods,
   logMeal,
+  saveCombo,
   saveProfile,
   saveSnack,
   saveTargets,
   syncBuiltinFoods,
   syncTargetsToWeight,
+  updateCustomFood,
 } from "../repos";
 import { shiftDate } from "@/lib/date";
 import { maintenanceKcal } from "@/lib/nutrition/maintenance";
@@ -238,6 +244,66 @@ describe("syncBuiltinFoods", () => {
     });
     await syncBuiltinFoods();
     expect(await db.foods.count()).toBe(seedFoods.length + 1);
+  });
+});
+
+const shake = {
+  name: "My shake",
+  kcalPer100: 100,
+  proteinPer100: 10,
+  fatPer100: 2,
+  carbPer100: 8,
+  unit: "ml" as const,
+  category: "other",
+  servingSize: 300,
+};
+
+describe("custom food editing", () => {
+  it("renames in place without forking", async () => {
+    const id = await addCustomFood(shake);
+    const result = await updateCustomFood(id, { ...shake, name: "Morning shake", servingSize: 250 });
+    expect(result).toBe(id);
+    const [f] = await getFoodsByIds([id]);
+    expect(f.name).toBe("Morning shake");
+    expect(f.servingSize).toBe(250);
+    expect(f.archived).toBeUndefined();
+  });
+
+  it("forks a new version on a nutrition change and repoints combos", async () => {
+    const id = await addCustomFood(shake);
+    await db.foods.update(id, { favorite: 1 });
+    await saveCombo("Breakfast", [{ foodId: id, grams: 300, locked: 1 }]);
+
+    const newId = await updateCustomFood(id, { ...shake, proteinPer100: 12 });
+    expect(newId).not.toBe(id);
+
+    const [old, next] = await getFoodsByIds([id, newId]);
+    expect(old.proteinPer100).toBe(10);
+    expect(old.archived).toBe(1);
+    expect(old.replacedBy).toBe(newId);
+    expect(next.proteinPer100).toBe(12);
+    expect(next.favorite).toBe(1);
+    expect(next.builtin).toBe(0);
+
+    const picker = await listFoods();
+    expect(picker.map((f) => f.id)).toEqual([newId]);
+    const [combo] = await listCombos();
+    expect(combo.items).toEqual([{ foodId: newId, grams: 300, locked: 1 }]);
+  });
+
+  it("archives on delete, keeping the row resolvable", async () => {
+    const id = await addCustomFood(shake);
+    await archiveFood(id);
+    expect(await listFoods()).toHaveLength(0);
+    const [f] = await getFoodsByIds([id]);
+    expect(f.name).toBe("My shake");
+  });
+
+  it("refuses to edit or archive builtins", async () => {
+    await syncBuiltinFoods();
+    const builtin = (await listFoods())[0];
+    await expect(updateCustomFood(builtin.id!, shake)).rejects.toThrow();
+    await expect(archiveFood(builtin.id!)).rejects.toThrow();
   });
 });
 
