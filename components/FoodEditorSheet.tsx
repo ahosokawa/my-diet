@@ -118,7 +118,6 @@ export function FoodEditorSheet({ open, onClose, food, initialName = "", onSaved
           <label className="label">Name</label>
           <input
             className="input"
-            autoFocus={!editing}
             aria-label="Food name"
             value={draft.name}
             onChange={(e) => {

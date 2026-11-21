@@ -18,13 +18,61 @@ type Props = {
 };
 
 const DETENT_CLASS: Record<Detent, string> = {
-  auto: "max-h-[88dvh]",
-  medium: "h-[55dvh] max-h-[88dvh]",
+  auto: "h-auto",
+  medium: "h-[55dvh]",
   large: "h-[88dvh]",
 };
 
 export function Sheet({ open, onClose, title, children, footer, detent = "large" }: Props) {
+  const viewportRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const frame = viewportRef.current;
+    const body = bodyRef.current;
+    if (!open || !viewport || !frame || !body) return;
+
+    let animationFrame = 0;
+    const update = () => {
+      animationFrame = 0;
+
+      // The keyboard can shrink and pan the visible area without changing dvh.
+      // Let the browser handle pinch zoom without resizing the sheet itself.
+      const zoomed = viewport.scale !== 1;
+      frame.style.top = zoomed ? "" : `${viewport.offsetTop}px`;
+      frame.style.height = zoomed ? "" : `${viewport.height}px`;
+      if (zoomed) return;
+
+      const focused = document.activeElement;
+      if (!focused || !body.contains(focused)) return;
+
+      // Reveal the focused control by scrolling only the sheet body.
+      const field = focused.getBoundingClientRect();
+      const visible = body.getBoundingClientRect();
+      if (field.top < visible.top) {
+        body.scrollTop += field.top - visible.top;
+      } else if (field.bottom > visible.bottom) {
+        body.scrollTop += field.bottom - visible.bottom;
+      }
+    };
+
+    function scheduleUpdate() {
+      if (!animationFrame) animationFrame = requestAnimationFrame(update);
+    }
+
+    update();
+    viewport.addEventListener("resize", scheduleUpdate);
+    viewport.addEventListener("scroll", scheduleUpdate);
+    body.addEventListener("focusin", scheduleUpdate);
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      viewport.removeEventListener("resize", scheduleUpdate);
+      viewport.removeEventListener("scroll", scheduleUpdate);
+      body.removeEventListener("focusin", scheduleUpdate);
+    };
+  }, [open]);
 
   // Keep the latest onClose in a ref so the focus-management effect below only
   // re-runs on open/close transitions. Inline onClose props change identity on
@@ -69,13 +117,13 @@ export function Sheet({ open, onClose, title, children, footer, detent = "large"
     const focusTimer = setTimeout(() => {
       const panel = panelRef.current;
       if (!panel || panel.contains(document.activeElement)) return;
-      panel.focus();
+      panel.focus({ preventScroll: true });
     }, 0);
 
     return () => {
       document.removeEventListener("keydown", onKey);
       clearTimeout(focusTimer);
-      opener?.focus?.();
+      opener?.focus({ preventScroll: true });
     };
   }, [open]);
 
@@ -87,7 +135,8 @@ export function Sheet({ open, onClose, title, children, footer, detent = "large"
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-40 mx-auto flex max-w-md flex-col justify-end"
+          ref={viewportRef}
+          className="fixed inset-x-0 top-0 z-40 mx-auto flex h-full max-w-md flex-col justify-end"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -105,7 +154,7 @@ export function Sheet({ open, onClose, title, children, footer, detent = "large"
             aria-modal="true"
             aria-label={title}
             tabIndex={-1}
-            className={`relative flex ${DETENT_CLASS[detent]} flex-col rounded-t-3xl bg-surface-2 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] outline-none`}
+            className={`relative flex ${DETENT_CLASS[detent]} max-h-[min(88dvh,calc(100%_-_env(safe-area-inset-top)))] flex-col rounded-t-3xl bg-surface-2 shadow-[0_-8px_32px_rgba(0,0,0,0.18)] outline-none`}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -115,20 +164,22 @@ export function Sheet({ open, onClose, title, children, footer, detent = "large"
             dragElastic={{ top: 0, bottom: 0.5 }}
             onDragEnd={onDragEnd}
           >
-            <div className="flex justify-center pt-2">
+            <div className="flex shrink-0 justify-center pt-2">
               <div className="h-1.5 w-10 rounded-full bg-fg-3/40" />
             </div>
             {title ? (
-              <div className="px-5 pb-2 pt-3">
+              <div className="shrink-0 px-5 pb-2 pt-3">
                 <h2 className="text-lg font-semibold">{title}</h2>
               </div>
             ) : (
-              <div className="pt-3" />
+              <div className="shrink-0 pt-3" />
             )}
-            <div className="flex-1 overflow-y-auto px-5 pb-4">{children}</div>
+            <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
+              {children}
+            </div>
             {footer ? (
               <div
-                className="border-t border-hairline bg-surface-2 px-5 pt-3"
+                className="shrink-0 border-t border-hairline bg-surface-2 px-5 pt-3"
                 style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
               >
                 {footer}

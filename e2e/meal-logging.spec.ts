@@ -109,6 +109,59 @@ test.describe("Meal logging", () => {
     ).toBeVisible();
   });
 
+  test("keeps food fields and actions above the keyboard when the visual viewport shrinks and pans", async ({ page }) => {
+    await page.getByRole("link", { name: /Meal 2/ }).click();
+    await page.getByRole("button", { name: /Add food/ }).click();
+
+    const picker = page.getByRole("dialog", { name: "Add food" });
+    const search = picker.getByPlaceholder("Search foods…");
+    await search.fill("keyboard test food");
+
+    // Mobile browser emulation does not open a system keyboard. Reproduce the
+    // visual viewport resize and pan while leaving the layout viewport alone.
+    const keyboardViewport = { top: 80, height: 360 };
+    await page.evaluate(({ top, height }) => {
+      const viewport = window.visualViewport!;
+      Object.defineProperties(viewport, {
+        height: { configurable: true, value: height },
+        offsetTop: { configurable: true, value: top },
+      });
+      viewport.dispatchEvent(new Event("resize"));
+      viewport.dispatchEvent(new Event("scroll"));
+    }, keyboardViewport);
+
+    async function expectFieldAboveActions(field: Locator, action: Locator, top: number) {
+      await expect.poll(async () => {
+        const [fieldBox, actionBox] = await Promise.all([field.boundingBox(), action.boundingBox()]);
+        return Boolean(fieldBox && actionBox && fieldBox.y >= top &&
+          fieldBox.y + fieldBox.height <= actionBox.y &&
+          actionBox.y + actionBox.height <= top + keyboardViewport.height);
+      }).toBe(true);
+    }
+
+    await expectFieldAboveActions(search, picker.getByRole("button", { name: "Done" }), keyboardViewport.top);
+    await picker.getByRole("button", { name: /Add "keyboard test food" as custom food/ }).click();
+
+    const editor = page.getByRole("dialog", { name: "Add custom food" });
+    const name = editor.getByLabel("Food name");
+    const save = editor.getByRole("button", { name: "Save" });
+    await expect(name).toHaveValue("keyboard test food");
+    await expect(name).not.toBeFocused();
+    await expectFieldAboveActions(name, save, keyboardViewport.top);
+
+    const category = editor.getByLabel("Category");
+    await category.evaluate((input) => input.focus({ preventScroll: true }));
+    await expectFieldAboveActions(category, save, keyboardViewport.top);
+
+    // iOS can also pan the visual viewport without resizing it.
+    await page.evaluate(() => {
+      const viewport = window.visualViewport!;
+      Object.defineProperty(viewport, "offsetTop", { configurable: true, value: 0 });
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await expectFieldAboveActions(category, save, 0);
+  });
+
   test("custom food form accepts decimal macros typed key-by-key", async ({ page }) => {
     await page.getByRole("link", { name: /Meal 2/ }).click();
     await page.getByRole("button", { name: /Add food/ }).click();
