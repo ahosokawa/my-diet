@@ -22,6 +22,28 @@ test.describe("Static export smoke", () => {
     await expect(page.getByRole("heading", { name: "Weight" }).first()).toBeVisible();
   });
 
+  test("adds new built-in foods to an existing catalog and finds them in the picker", async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date(`${TODAY}T10:00:00`));
+    const { tables } = makeDay3MidWeek({ today: TODAY });
+    tables.foods = tables.foods.filter((food) => food.slug === "spinach-raw");
+    await seedEnvelope(page, tables, { gotoPath: "./" });
+
+    await page.goto("./today/");
+    await page.getByRole("link", { name: /Meal 1/ }).click();
+    await page.getByRole("button", { name: "Add food" }).click();
+    const picker = page.getByRole("dialog", { name: "Add food" });
+    const search = picker.getByPlaceholder("Search foods…");
+
+    await search.fill("steamed spinach");
+    await expect(picker.getByRole("button", { name: /^Spinach \(steamed\)/ })).toBeVisible();
+    await search.fill("baked butternut squash");
+    await expect(picker.getByRole("button", { name: /^Butternut squash \(baked\)/ })).toBeVisible();
+    await search.fill("ground beef 93/7 cooked");
+    await expect(picker.getByRole("button", { name: /^Ground beef 93\/7 \(cooked\)/ })).toBeVisible();
+  });
+
   test("service worker precaches the shell; unvisited routes work offline", async ({
     page,
     context,

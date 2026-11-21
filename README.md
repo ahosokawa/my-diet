@@ -9,10 +9,12 @@ An iOS-friendly PWA for tracking calories and macros. Local-first: all food and 
 - **Weekly schedule** — per-day meal times and workout window, with flexible copy-to-days. Workout days get an automatic post-workout recovery meal.
 - **Today view** — daily totals + per-meal cards. Navigate past and future days with prev/next arrows.
 - **Meal detail** — pick foods, lock specific portions, auto-balance the rest via least-squares solver to hit the meal's macro target. Create custom foods inline from the picker: enter serving size + per-serving macros, the app normalizes to per-100 behind the scenes.
-- **Food library** — ~130 curated seeded foods plus custom foods you create. Favorites pin to the top of the picker.
+- **Food library** — 276 built-in foods plus custom foods you create. Favorites pin to the top of the picker.
 - **Combos** — save a set of foods (with locks) and reload them into any meal; auto-balances on load.
 - **Weight log** — daily weight entry with a simple line chart.
 - **PWA** — installable to the home screen, works offline.
+
+The catalog expansion uses per-100 g values from [USDA FoodData Central SR Legacy](https://fdc.nal.usda.gov/download-datasets/). Steamed spinach uses the [Swiss Food Composition Database v7.1](https://www.naehrwertdaten.ch/en/downloads/) from the Federal Food Safety and Veterinary Office (FSVO), with fiber included in total carbohydrates.
 
 ## Stack
 
